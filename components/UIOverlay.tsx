@@ -244,11 +244,15 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             
             {/* STATE 1: STABLE -> DISMANTLE */}
             {isStable && (
-                 <div className="animate-in slide-in-from-bottom-10 fade-in duration-300">
+                 <div className="flex flex-col items-center gap-2 animate-in slide-in-from-bottom-10 fade-in duration-300">
+                     <div className="bg-slate-900/90 text-amber-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-amber-500/30 flex items-center gap-1.5 backdrop-blur-md">
+                        <Hammer size={14} className="text-amber-400 animate-bounce" />
+                        <span>Click BREAK or tap model to strike with 3D Hammer!</span>
+                     </div>
                      <BigActionButton 
                         onClick={onDismantle} 
                         icon={<Hammer size={32} strokeWidth={2.5} />} 
-                        label="BREAK" 
+                        label="HAMMER SMASH" 
                      />
                  </div>
             )}

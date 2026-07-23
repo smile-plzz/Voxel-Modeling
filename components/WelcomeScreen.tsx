@@ -28,9 +28,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ visible }) => {
         </div>
         
         <div className="space-y-3 mt-2">
-            <p className="text-lg font-bold text-slate-700">Build amazing voxel models</p>
-            <p className="text-lg font-bold text-slate-700">Break them down and rebuild them</p>
-            <p className="text-lg font-bold text-slate-700">Share your creations with friends</p>
+            <p className="text-lg font-bold text-slate-700">Build & explore mega voxel sculptures</p>
+            <p className="text-lg font-bold text-amber-600">🔨 Strike with 3D War Hammer to smash models into physics rubble</p>
+            <p className="text-lg font-bold text-emerald-600">⚡ Rebuild seamlessly into new creations</p>
         </div>
       </div>
     </div>

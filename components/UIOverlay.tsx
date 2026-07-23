@@ -4,10 +4,15 @@
 */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, SavedModel, ToolType, VoxelEngineStats } from '../types';
+import { AppState, SavedModel, ToolType, VoxelEngineStats, VoxelLayoutStyle } from '../types';
 import { PresetType } from '../utils/voxelGenerators';
 import { 
   Box, 
+  Boxes,
+  Circle,
+  Cylinder,
+  Diamond,
+  Puzzle,
   Bird, 
   Cat, 
   Rabbit, 
@@ -41,7 +46,15 @@ import {
   Zap,
   Bomb,
   ShieldAlert,
-  Activity
+  Activity,
+  Crown,
+  Compass,
+  Dog,
+  Skull,
+  Shield,
+  Gamepad2,
+  Plane,
+  Swords
 } from 'lucide-react';
 
 interface UIOverlayProps {
@@ -55,10 +68,12 @@ interface UIOverlayProps {
   customRebuilds: SavedModel[];
   isAutoRotate: boolean;
   isInfoVisible: boolean;
-  densityScale: number;
+  explosionRadius: number;
+  layoutStyle: VoxelLayoutStyle;
   onSelectTool: (tool: ToolType) => void;
   onSelectPaintColor: (colorHex: number) => void;
-  onDensityChange: (scale: number) => void;
+  onExplosionRadiusChange: (radius: number) => void;
+  onSelectLayoutStyle: (style: VoxelLayoutStyle) => void;
   onDismantle: () => void;
   onRebuild: (type: PresetType) => void;
   onNewScene: (type: PresetType) => void;
@@ -79,7 +94,19 @@ export const PRESET_MODELS: { id: PresetType; label: string; icon: React.ReactNo
   { id: 'GalaxyCluster200k', label: 'Galaxy Cluster (200k)', icon: <Sparkles size={18} className="text-purple-500" />, isMega: true, approxCount: '200k' },
   { id: 'CyberCity250k', label: 'Cyber Megacity (250k)', icon: <Grid size={18} className="text-emerald-500" />, isMega: true, approxCount: '250k' },
   
-  // Standard Presets
+  // Standard Presets & New Models
+  { id: 'CyberPunkCar', label: 'Cyberpunk Sports Car', icon: <Car size={18} className="text-pink-500" /> },
+  { id: 'PyramidTomb', label: 'Golden Pyramid Tomb', icon: <Crown size={18} className="text-amber-500" /> },
+  { id: 'MechanicalDragon', label: 'Mechanical Cyber Dragon', icon: <Flame size={18} className="text-emerald-500" /> },
+  { id: 'LighthouseIsland', label: 'Coastal Lighthouse', icon: <Compass size={18} className="text-blue-500" /> },
+  { id: 'GoldenGalleon', label: 'Royal Golden Galleon', icon: <Anchor size={18} className="text-yellow-600" /> },
+  { id: 'SpaceStation', label: 'Orbital Space Station', icon: <Globe size={18} className="text-cyan-400" /> },
+  { id: 'PugDog', label: 'Cute Pug Puppy', icon: <Dog size={18} className="text-amber-600" /> },
+  { id: 'CyberSkull', label: 'Cybernetic Skull', icon: <Skull size={18} className="text-purple-400" /> },
+  { id: 'MedievalCastle', label: 'Grand Royal Fortress', icon: <Shield size={18} className="text-indigo-600" /> },
+  { id: 'SteampunkAirship', label: 'Steampunk Airship', icon: <Plane size={18} className="text-amber-700" /> },
+  { id: 'ArcadeCabinet', label: 'Retro Arcade Machine', icon: <Gamepad2 size={18} className="text-cyan-400" /> },
+  { id: 'CyberSamurai', label: 'Cyberpunk Samurai', icon: <Swords size={18} className="text-rose-500" /> },
   { id: 'Eagle', label: 'Majestic Eagle', icon: <Bird size={18} /> },
   { id: 'Cat', label: 'Playful Cat', icon: <Cat size={18} /> },
   { id: 'Rabbit', label: 'Forest Bunny', icon: <Rabbit size={18} /> },
@@ -117,10 +144,12 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   customRebuilds,
   isAutoRotate,
   isInfoVisible,
-  densityScale,
+  explosionRadius,
+  layoutStyle,
   onSelectTool,
   onSelectPaintColor,
-  onDensityChange,
+  onExplosionRadiusChange,
+  onSelectLayoutStyle,
   onDismantle,
   onRebuild,
   onNewScene,
@@ -151,6 +180,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
         return 'Click and spray paint color directly onto voxels in real-time!';
       case 'magnet':
         return 'Click and drag on voxels to pull and launch them with gravity magnetic pulse!';
+      case 'explosion':
+        return '💥 Click anywhere on the model to detonate a radial kinetic explosion with custom blast radius!';
       default:
         return 'Select a tool to interact with the model!';
     }
@@ -259,25 +290,29 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                     )}
                 </div>
 
-                {/* Sub-division Density Control */}
+                {/* Voxel Layout Style Chooser */}
                 <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md shadow-md rounded-2xl border border-slate-200/80 p-1">
-                    <span className="text-[10px] font-black text-slate-400 uppercase px-2">Density:</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase px-2 hidden sm:inline">Voxel Layout:</span>
                     {([
-                        { scale: 1, label: '1x' },
-                        { scale: 2, label: '8x' },
-                        { scale: 3, label: '27x' },
-                        { scale: 4, label: '64x' }
-                    ]).map((opt) => (
+                        { style: 'cube', label: 'Cube', icon: <Box size={14} /> },
+                        { style: 'beveled', label: 'Bevel', icon: <Boxes size={14} /> },
+                        { style: 'sphere', label: 'Orb', icon: <Circle size={14} /> },
+                        { style: 'cylinder', label: 'Pillar', icon: <Cylinder size={14} /> },
+                        { style: 'crystal', label: 'Gem', icon: <Diamond size={14} /> },
+                        { style: 'lego', label: 'Brick', icon: <Puzzle size={14} /> }
+                    ] as const).map((opt) => (
                         <button
-                            key={`density-${opt.scale}`}
-                            onClick={() => onDensityChange(opt.scale)}
-                            className={`px-2.5 py-1 text-xs font-extrabold rounded-xl transition-all ${
-                                densityScale === opt.scale
-                                    ? 'bg-indigo-600 text-white shadow-sm'
+                            key={`layout-${opt.style}`}
+                            onClick={() => onSelectLayoutStyle(opt.style)}
+                            className={`px-2.5 py-1 text-xs font-extrabold rounded-xl transition-all flex items-center gap-1 ${
+                                layoutStyle === opt.style
+                                    ? 'bg-indigo-600 text-white shadow-sm scale-105'
                                     : 'text-slate-600 hover:bg-slate-100'
                             }`}
+                            title={`Switch to ${opt.label} voxel geometry layout`}
                         >
-                            {opt.label}
+                            {opt.icon}
+                            <span>{opt.label}</span>
                         </button>
                     ))}
                 </div>
@@ -360,7 +395,46 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
             icon={<Magnet size={22} className="text-cyan-500" />}
             label="Voxel Magnet"
           />
+          <ToolButton 
+            active={activeTool === 'explosion'} 
+            onClick={() => onSelectTool('explosion')}
+            icon={<Flame size={22} className="text-orange-500" />}
+            label="Explosion"
+            badge="Blast Wave"
+          />
         </div>
+
+        {/* Explosion Blast Radius Controls (When Explosion Tool is Active) */}
+        {activeTool === 'explosion' && (
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl border border-slate-200 flex items-center gap-3 animate-in fade-in zoom-in-95">
+            <span className="text-xs font-black text-slate-500 uppercase flex items-center gap-1.5">
+              <Flame size={16} className="text-orange-500" /> Blast Radius:
+            </span>
+            <input 
+              type="range" 
+              min="6" 
+              max="60" 
+              step="1"
+              value={explosionRadius}
+              onChange={(e) => onExplosionRadiusChange(Number(e.target.value))}
+              className="w-28 sm:w-36 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
+            />
+            <span className="text-xs font-black font-mono bg-orange-100 text-orange-700 px-2 py-0.5 rounded-md min-w-[3.2rem] text-center">
+              {explosionRadius}m
+            </span>
+            <div className="hidden sm:flex gap-1 ml-1">
+              {[10, 20, 35, 55].map((r) => (
+                <button
+                  key={`radius-${r}`}
+                  onClick={() => onExplosionRadiusChange(r)}
+                  className={`px-2.5 py-0.5 text-[11px] font-extrabold rounded-lg transition-all ${explosionRadius === r ? 'bg-orange-500 text-white shadow-sm scale-105' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  {r}m
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Color Palette (When Paintbrush is Active) */}
         {activeTool === 'paintbrush' && (

@@ -5,7 +5,8 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { AppState, SimulationVoxel, RebuildTarget, VoxelData, ToolType, VoxelEngineStats } from '../types';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
+import { AppState, SimulationVoxel, RebuildTarget, VoxelData, ToolType, VoxelEngineStats, VoxelLayoutStyle } from '../types';
 import { CONFIG } from '../utils/voxelConstants';
 
 interface DebrisParticle {
@@ -72,6 +73,12 @@ export class VoxelEngine {
   private isDynamiteActive: boolean = false;
   private dynamiteStartTime: number = 0;
   private dynamiteTargetPoint = new THREE.Vector3();
+
+  // --- Explosion Tool State ---
+  private explosionRadius: number = 20;
+
+  // --- Voxel Layout Choosability State ---
+  private layoutStyle: VoxelLayoutStyle = 'cube';
 
   private isSmashing: boolean = false;
   private smashProgress: number = 0;
@@ -413,11 +420,58 @@ export class VoxelEngine {
         this.plantDynamiteAt(hitPoint);
       } else if (this.activeTool === 'magnet') {
         this.applyMagnetAt(hitPoint);
+      } else if (this.activeTool === 'explosion') {
+        this.triggerExplosionAt(hitPoint);
       } else {
         // Hammer Modes (miniHammer, sledgeHammer, megaHammer)
         this.triggerHammerStrike(hitPoint);
       }
     }
+  }
+
+  public setExplosionRadius(radius: number) {
+    this.explosionRadius = radius;
+  }
+
+  public getExplosionRadius(): number {
+    return this.explosionRadius;
+  }
+
+  private createVoxelGeometry(style: VoxelLayoutStyle): THREE.BufferGeometry {
+    const size = CONFIG.VOXEL_SIZE - 0.04;
+    switch (style) {
+      case 'beveled':
+        return new THREE.BoxGeometry(size * 0.9, size * 0.9, size * 0.9);
+      case 'sphere':
+        return new THREE.SphereGeometry(size * 0.52, 12, 12);
+      case 'cylinder':
+        return new THREE.CylinderGeometry(size * 0.46, size * 0.46, size, 12);
+      case 'crystal':
+        return new THREE.OctahedronGeometry(size * 0.62, 0);
+      case 'lego': {
+        const baseGeom = new THREE.BoxGeometry(size, size * 0.82, size);
+        const studGeom = new THREE.CylinderGeometry(size * 0.28, size * 0.28, size * 0.2, 12);
+        studGeom.translate(0, size * 0.48, 0);
+        return BufferGeometryUtils.mergeGeometries([baseGeom, studGeom]);
+      }
+      case 'cube':
+      default:
+        return new THREE.BoxGeometry(size, size, size);
+    }
+  }
+
+  public setVoxelLayoutStyle(style: VoxelLayoutStyle) {
+    this.layoutStyle = style;
+    if (this.instanceMesh) {
+      const oldGeom = this.instanceMesh.geometry;
+      this.instanceMesh.geometry = this.createVoxelGeometry(style);
+      if (oldGeom) oldGeom.dispose();
+      this.draw();
+    }
+  }
+
+  public getVoxelLayoutStyle(): VoxelLayoutStyle {
+    return this.layoutStyle;
   }
 
   public loadInitialModel(data: VoxelData[]) {
@@ -472,7 +526,7 @@ export class VoxelEngine {
     const camDist = Math.max(40, maxDim * 1.25);
     this.camera.position.set(camDist * 0.6, camDist * 0.6, camDist * 0.9);
 
-    const geometry = new THREE.BoxGeometry(CONFIG.VOXEL_SIZE - 0.04, CONFIG.VOXEL_SIZE - 0.04, CONFIG.VOXEL_SIZE - 0.04);
+    const geometry = this.createVoxelGeometry(this.layoutStyle);
     const material = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.1 });
     
     this.instanceMesh = new THREE.InstancedMesh(geometry, material, count);
@@ -531,7 +585,7 @@ export class VoxelEngine {
   }
 
   /**
-   * Main Hammer Dismantle Trigger (Supports button click or tap)
+   * Main Tool Dismantle Trigger (Supports button click or tap)
    */
   public dismantle(customHitPoint?: THREE.Vector3) {
     if (this.isSmashing) return;
@@ -542,7 +596,104 @@ export class VoxelEngine {
       (this.modelBounds.minZ + this.modelBounds.maxZ) / 2
     );
 
-    this.triggerHammerStrike(hitPoint);
+    if (this.activeTool === 'explosion') {
+      this.triggerExplosionAt(hitPoint);
+    } else if (this.activeTool === 'dynamite') {
+      this.plantDynamiteAt(hitPoint);
+    } else if (this.activeTool === 'magnet') {
+      this.applyMagnetAt(hitPoint);
+    } else if (this.activeTool === 'paintbrush') {
+      this.paintAtPoint(hitPoint);
+    } else {
+      this.triggerHammerStrike(hitPoint);
+    }
+  }
+
+  /**
+   * Configurable Radial Explosion Routine
+   */
+  public triggerExplosionAt(impact: THREE.Vector3, radiusOverride?: number) {
+    this.hitsCount++;
+
+    const radius = radiusOverride ?? this.explosionRadius;
+    const blastForce = Math.max(1.5, radius * 0.16);
+
+    const count = this.voxels.length;
+    let affectedThisHit = 0;
+    const sampledColors: THREE.Color[] = [];
+
+    for (let i = 0; i < count; i++) {
+        const v = this.voxels[i];
+
+        const dx = v.x - impact.x;
+        const dy = v.y - impact.y;
+        const dz = v.z - impact.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+
+        if (distSq <= radius * radius) {
+          const dist = Math.sqrt(distSq);
+          v.isPhysicsActive = true;
+          affectedThisHit++;
+
+          if (sampledColors.length < 40) {
+            sampledColors.push(v.color.clone());
+          }
+
+          const safeDist = Math.max(0.1, dist);
+          const normalizedDist = dist / radius; // 0 at center, 1 at boundary
+          const force = Math.max(0.8, (1.0 - normalizedDist) * blastForce * 2.2 + 0.5);
+
+          const dirX = dx / safeDist;
+          const dirY = dy / safeDist;
+          const dirZ = dz / safeDist;
+
+          // Propel outward with high radial kinetic velocity
+          v.vx = dirX * force + (Math.random() - 0.5) * 0.8;
+          v.vy = Math.max(0.4, dirY * force + (Math.random() * 1.5)) + (1.0 - normalizedDist) * 1.2;
+          v.vz = dirZ * force + (Math.random() - 0.5) * 0.8;
+
+          v.rvx = (Math.random() - 0.5) * 1.2;
+          v.rvy = (Math.random() - 0.5) * 1.2;
+          v.rvz = (Math.random() - 0.5) * 1.2;
+        }
+    }
+
+    // Spawn floating debris particle burst matching destroyed voxel colors
+    const debrisAmount = Math.min(150, Math.floor(radius * 3.5) + 30);
+    this.spawnFloatingDebris(impact, debrisAmount, blastForce, sampledColors);
+
+    // Shockwave Ring FX
+    this.shockwaveMesh.position.copy(impact);
+    const ringScale = Math.max(1.0, radius * 0.15);
+    this.shockwaveMesh.scale.set(ringScale, ringScale, ringScale);
+    (this.shockwaveMesh.material as THREE.MeshBasicMaterial).opacity = 1.0;
+    this.shockwaveMesh.visible = true;
+
+    // Spark Particles Burst
+    const pCount = Math.min(180, Math.floor(radius * 4) + 50);
+    for (let i = 0; i < pCount; i++) {
+      const idx = i * 3;
+      this.sparkPositions[idx] = impact.x + (Math.random() - 0.5) * 2;
+      this.sparkPositions[idx + 1] = impact.y + (Math.random() - 0.5) * 2;
+      this.sparkPositions[idx + 2] = impact.z + (Math.random() - 0.5) * 2;
+
+      this.sparkVelocities[idx] = (Math.random() - 0.5) * (blastForce * 2.0);
+      this.sparkVelocities[idx + 1] = Math.random() * (blastForce * 2.2) + 0.6;
+      this.sparkVelocities[idx + 2] = (Math.random() - 0.5) * (blastForce * 2.0);
+    }
+    this.sparkGeom.attributes.position.needsUpdate = true;
+    (this.sparkParticles.material as THREE.PointsMaterial).opacity = 1.0;
+    this.sparkParticles.visible = true;
+
+    // Camera Shake
+    this.cameraShakeIntensity = Math.min(3.5, radius * 0.12 + 0.8);
+
+    this.emitStats();
+
+    if (this.state === AppState.STABLE) {
+      this.state = AppState.DISMANTLING;
+      this.onStateChange(this.state);
+    }
   }
 
   /**
@@ -740,11 +891,55 @@ export class VoxelEngine {
   public rebuild(targetModel: VoxelData[]) {
     if (this.state === AppState.REBUILDING) return;
 
-    const count = this.voxels.length;
-    const mappings: RebuildTarget[] = new Array(count);
+    const targetCount = targetModel.length;
+    let currentCount = this.voxels.length;
 
+    // 1. Rescale voxel collection if target model has a different number of blocks
+    if (currentCount !== targetCount) {
+        if (targetCount > currentCount) {
+            for (let i = currentCount; i < targetCount; i++) {
+                const floorX = (Math.random() - 0.5) * 16;
+                const floorZ = (Math.random() - 0.5) * 16;
+                this.voxels[i] = {
+                    id: i,
+                    x: floorX,
+                    y: CONFIG.FLOOR_Y + 0.5,
+                    z: floorZ,
+                    color: new THREE.Color(targetModel[i].color),
+                    vx: 0, vy: 0, vz: 0,
+                    rx: 0, ry: 0, rz: 0,
+                    rvx: 0, rvy: 0, rvz: 0,
+                    isPhysicsActive: true
+                };
+            }
+        } else {
+            this.voxels.length = targetCount;
+        }
+
+        currentCount = targetCount;
+
+        // Recreate Instance Mesh
+        this.scene.remove(this.instanceMesh);
+        if (this.instanceMesh.geometry) this.instanceMesh.geometry.dispose();
+        if (Array.isArray(this.instanceMesh.material)) {
+            this.instanceMesh.material.forEach(m => m.dispose());
+        } else if (this.instanceMesh.material) {
+            this.instanceMesh.material.dispose();
+        }
+
+        const geometry = this.createVoxelGeometry(this.layoutStyle);
+        const material = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.1 });
+        this.instanceMesh = new THREE.InstancedMesh(geometry, material, targetCount);
+        this.instanceMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.instanceMesh.castShadow = targetCount <= 80000;
+        this.instanceMesh.receiveShadow = true;
+        this.scene.add(this.instanceMesh);
+        this.onCountChange(targetCount);
+    }
+
+    // 2. Linear Color Bucket Matching O(N)
     const colorBuckets = new Map<number, number[]>();
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < targetCount; i++) {
         const hex = this.voxels[i].color.getHex();
         let bucket = colorBuckets.get(hex);
         if (!bucket) {
@@ -754,9 +949,10 @@ export class VoxelEngine {
         bucket.push(i);
     }
 
-    const used = new Uint8Array(count);
+    const used = new Uint8Array(targetCount);
+    const mappings: RebuildTarget[] = new Array(targetCount);
 
-    targetModel.forEach(target => {
+    targetModel.forEach((target) => {
         let chosenIndex = -1;
         const bucket = colorBuckets.get(target.color);
         if (bucket && bucket.length > 0) {
@@ -777,19 +973,34 @@ export class VoxelEngine {
         }
 
         if (chosenIndex !== -1) {
-            const h = Math.max(0, (target.y - CONFIG.FLOOR_Y) / 20);
+            const v = this.voxels[chosenIndex];
+            const heightRatio = Math.max(0, (target.y - CONFIG.FLOOR_Y) / 25);
+            const distFromCenter = Math.sqrt(target.x * target.x + target.z * target.z) / 25;
+            const delay = (heightRatio * 700) + (distFromCenter * 150);
+
             mappings[chosenIndex] = {
-                x: target.x, y: target.y, z: target.z,
-                delay: h * 600
+                startX: v.x, startY: v.y, startZ: v.z,
+                startRx: v.rx, startRy: v.ry, startRz: v.rz,
+                targetX: target.x, targetY: target.y, targetZ: target.z,
+                startColor: v.color.clone(),
+                targetColor: new THREE.Color(target.color),
+                delay,
+                flightDuration: 650
             };
         }
     });
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < targetCount; i++) {
         if (!mappings[i]) {
+            const v = this.voxels[i];
             mappings[i] = {
-                x: this.voxels[i].x, y: this.voxels[i].y, z: this.voxels[i].z,
-                isRubble: true, delay: 0
+                startX: v.x, startY: v.y, startZ: v.z,
+                startRx: v.rx, startRy: v.ry, startRz: v.rz,
+                targetX: v.x, targetY: v.y, targetZ: v.z,
+                startColor: v.color.clone(),
+                targetColor: v.color.clone(),
+                delay: 0,
+                flightDuration: 500
             };
         }
     }
@@ -929,55 +1140,87 @@ export class VoxelEngine {
             const v = this.voxels[i];
             if (!v.isPhysicsActive) continue;
 
-            v.vy -= 0.025; // Gravity
+            v.vy -= 0.032; // Gravity acceleration for active debris
             v.x += v.vx; v.y += v.vy; v.z += v.vz;
             v.rx += v.rvx; v.ry += v.rvy; v.rz += v.rvz;
 
             // Floor bounce
             if (v.y < floorY) {
                 v.y = floorY;
-                v.vy *= -0.5; v.vx *= 0.9; v.vz *= 0.9;
+                v.vy *= -0.5; v.vx *= 0.85; v.vz *= 0.85;
                 v.rvx *= 0.8; v.rvy *= 0.8; v.rvz *= 0.8;
             }
         }
+        this.emitStats();
     } else if (this.state === AppState.REBUILDING) {
         const now = Date.now();
         const elapsed = now - this.rebuildStartTime;
         let allDone = true;
-        const speed = 0.14;
+        let colorsNeedUpdate = false;
 
         for (let i = 0; i < count; i++) {
             const v = this.voxels[i];
             const t = this.rebuildTargets[i];
-            if (!t || t.isRubble) continue;
+            if (!t) continue;
 
             if (elapsed < t.delay) {
                 allDone = false;
+                v.x = t.startX; v.y = t.startY; v.z = t.startZ;
+                v.rx = t.startRx; v.ry = t.startRy; v.rz = t.startRz;
                 continue;
             }
 
-            v.x += (t.x - v.x) * speed;
-            v.y += (t.y - v.y) * speed;
-            v.z += (t.z - v.z) * speed;
-            v.rx += (0 - v.rx) * speed;
-            v.ry += (0 - v.ry) * speed;
-            v.rz += (0 - v.rz) * speed;
+            const flightElapsed = elapsed - t.delay;
+            const progress = Math.min(1.0, flightElapsed / t.flightDuration);
 
-            const dx = t.x - v.x;
-            const dy = t.y - v.y;
-            const dz = t.z - v.z;
-            if (dx * dx + dy * dy + dz * dz > 0.01) {
+            if (progress < 1.0) {
                 allDone = false;
+                const ease = 1 - Math.pow(1 - progress, 3);
+                const arc = Math.sin(progress * Math.PI) * 5.0;
+
+                v.x = t.startX + (t.targetX - t.startX) * ease;
+                v.y = t.startY + (t.targetY - t.startY) * ease + arc * (1 - progress);
+                v.z = t.startZ + (t.targetZ - t.startZ) * ease;
+
+                v.rx = t.startRx * (1 - ease);
+                v.ry = t.startRy * (1 - ease);
+                v.rz = t.startRz * (1 - ease);
+
+                v.color.copy(t.startColor).lerp(t.targetColor, ease);
+                this.instanceMesh.setColorAt(i, v.color);
+                colorsNeedUpdate = true;
             } else {
-                v.x = t.x; v.y = t.y; v.z = t.z;
+                v.x = t.targetX;
+                v.y = t.targetY;
+                v.z = t.targetZ;
                 v.rx = 0; v.ry = 0; v.rz = 0;
                 v.isPhysicsActive = false;
+                v.color.copy(t.targetColor);
+                this.instanceMesh.setColorAt(i, v.color);
+                colorsNeedUpdate = true;
             }
+        }
+
+        if (colorsNeedUpdate && this.instanceMesh.instanceColor) {
+            this.instanceMesh.instanceColor.needsUpdate = true;
         }
 
         if (allDone) {
             this.state = AppState.STABLE;
             this.hitsCount = 0;
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            let minZ = Infinity, maxZ = -Infinity;
+            for (let i = 0; i < count; i++) {
+                const vx = this.voxels[i];
+                if (vx.x < minX) minX = vx.x; if (vx.x > maxX) maxX = vx.x;
+                if (vx.y < minY) minY = vx.y; if (vx.y > maxY) maxY = vx.y;
+                if (vx.z < minZ) minZ = vx.z; if (vx.z > maxZ) maxZ = vx.z;
+            }
+            this.modelBounds = { minX, maxX, minY, maxY, minZ, maxZ };
+            const centerY = (minY + maxY) / 2;
+            this.controls.target.set(0, Math.max(5, centerY), 0);
+
             this.emitStats();
             this.onStateChange(this.state);
         }

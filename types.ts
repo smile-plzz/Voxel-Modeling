@@ -19,7 +19,9 @@ export interface VoxelData {
   color: number;
 }
 
-export type ToolType = 'miniHammer' | 'sledgeHammer' | 'megaHammer' | 'dynamite' | 'paintbrush' | 'magnet';
+export type ToolType = 'miniHammer' | 'sledgeHammer' | 'megaHammer' | 'dynamite' | 'paintbrush' | 'magnet' | 'explosion';
+
+export type VoxelLayoutStyle = 'cube' | 'beveled' | 'sphere' | 'cylinder' | 'crystal' | 'lego';
 
 export interface VoxelEngineStats {
   intactCount: number;
@@ -48,11 +50,19 @@ export interface SimulationVoxel {
 }
 
 export interface RebuildTarget {
-  x: number;
-  y: number;
-  z: number;
+  startX: number;
+  startY: number;
+  startZ: number;
+  startRx: number;
+  startRy: number;
+  startRz: number;
+  targetX: number;
+  targetY: number;
+  targetZ: number;
+  startColor: THREE.Color;
+  targetColor: THREE.Color;
   delay: number;
-  isRubble?: boolean;
+  flightDuration: number;
 }
 
 export interface SavedModel {

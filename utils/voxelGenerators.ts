@@ -53,45 +53,24 @@ export type PresetType =
     | 'PirateShip' 
     | 'TreasureChest' 
     | 'House'
+    | 'CyberPunkCar'
+    | 'PyramidTomb'
+    | 'MechanicalDragon'
+    | 'LighthouseIsland'
+    | 'GoldenGalleon'
+    | 'SpaceStation'
+    | 'PugDog'
+    | 'CyberSkull'
+    | 'MedievalCastle'
+    | 'SteampunkAirship'
+    | 'ArcadeCabinet'
+    | 'CyberSamurai'
     | 'MegaMetropolis100k'
     | 'VolcanoIsland120k'
     | 'SphereMatrix100k'
     | 'TitanColossus150k'
     | 'GalaxyCluster200k'
     | 'CyberCity250k';
-
-/**
- * Upscales any model data by subdividing each voxel into sub-voxels
- * e.g., multiplier = 4 turns 1 voxel into 4x4x4 = 64 sub-voxels!
- */
-export function upscaleVoxelData(data: VoxelData[], subDivisions: number): VoxelData[] {
-    if (subDivisions <= 1) return data;
-    
-    const result: VoxelData[] = [];
-    const step = 1 / subDivisions;
-    const offset = (1 - step) / 2;
-
-    for (let i = 0; i < data.length; i++) {
-        const v = data[i];
-        const baseX = v.x;
-        const baseY = v.y;
-        const baseZ = v.z;
-
-        for (let dx = 0; dx < subDivisions; dx++) {
-            for (let dy = 0; dy < subDivisions; dy++) {
-                for (let dz = 0; dz < subDivisions; dz++) {
-                    result.push({
-                        x: +(baseX + (dx * step) - offset).toFixed(3),
-                        y: +(baseY + (dy * step) - offset).toFixed(3),
-                        z: +(baseZ + (dz * step) - offset).toFixed(3),
-                        color: v.color
-                    });
-                }
-            }
-        }
-    }
-    return result;
-}
 
 export const Generators: Record<PresetType, () => VoxelData[]> = {
     Eagle: (): VoxelData[] => {
@@ -624,6 +603,471 @@ export const Generators: Record<PresetType, () => VoxelData[]> = {
         setBlock(map, 5.5, HY + 15, -1, COLORS.WHITE);
         generateSphere(map, -4, HY + 1, 6, 1.5, COLORS.GREEN);
         generateSphere(map, 4, HY + 1, 6, 1.5, COLORS.GREEN);
+        return Array.from(map.values());
+    },
+
+    CyberPunkCar: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const CY = CONFIG.FLOOR_Y + 1;
+        for (let x = -4; x <= 4; x++) {
+            for (let z = -9; z <= 9; z++) {
+                for (let y = 1; y <= 3; y++) {
+                    const isEdge = Math.abs(x) === 4 || Math.abs(z) === 9 || y === 1;
+                    const color = isEdge ? COLORS.DARK_GRAY : COLORS.DARK;
+                    setBlock(map, x, CY + y, z, color);
+                }
+            }
+        }
+        for (let z = -8; z <= 8; z++) {
+            setBlock(map, -4, CY, z, COLORS.CYAN);
+            setBlock(map, 4, CY, z, COLORS.CYAN);
+        }
+        for (let x = -3; x <= 3; x++) {
+            for (let z = -4; z <= 4; z++) {
+                setBlock(map, x, CY + 4, z, COLORS.MAGENTA);
+                if (z >= -3 && z <= 1) setBlock(map, x, CY + 5, z, COLORS.CYAN);
+            }
+        }
+        const wheels = [[-5, -6], [5, -6], [-5, 6], [5, 6]];
+        wheels.forEach(([wx, wz]) => {
+            generateSphere(map, wx, CY + 2, wz, 2.2, COLORS.BLACK);
+            setBlock(map, wx + (wx > 0 ? 0.3 : -0.3), CY + 2, wz, COLORS.CYAN);
+        });
+        for (let y = 2; y <= 4; y++) {
+            setBlock(map, -2, CY + y, 10, COLORS.ORANGE);
+            setBlock(map, 2, CY + y, 10, COLORS.ORANGE);
+            setBlock(map, -2, CY + y, 11, COLORS.CYAN);
+            setBlock(map, 2, CY + y, 11, COLORS.CYAN);
+        }
+        for (let x = -5; x <= 5; x++) {
+            setBlock(map, x, CY + 6, 8, COLORS.MAGENTA);
+        }
+        setBlock(map, -4, CY + 5, 8, COLORS.DARK_GRAY); setBlock(map, 4, CY + 5, 8, COLORS.DARK_GRAY);
+        return Array.from(map.values());
+    },
+
+    PyramidTomb: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const PY = CONFIG.FLOOR_Y + 1;
+        const size = 18;
+        for (let step = 0; step <= size; step++) {
+            const w = size - step;
+            for (let x = -w; x <= w; x++) {
+                for (let z = -w; z <= w; z++) {
+                    const isOuter = Math.abs(x) === w || Math.abs(z) === w;
+                    if (isOuter) {
+                        const col = step === size ? COLORS.RED : (step % 2 === 0 ? COLORS.GOLD : COLORS.STONE);
+                        setBlock(map, x, PY + step, z, col);
+                    }
+                }
+            }
+        }
+        setBlock(map, 0, PY + size + 1, 0, COLORS.RED);
+        setBlock(map, 0, PY + size + 2, 0, COLORS.YELLOW);
+
+        for (let y = 1; y <= 4; y++) {
+            for (let x = -2; x <= 2; x++) {
+                setBlock(map, x, PY + y, size, COLORS.BLACK);
+            }
+        }
+        for (let side of [-1, 1]) {
+            const sx = side * 8;
+            generateSphere(map, sx, PY + 2, size + 5, 2.5, COLORS.GOLD, 1.2);
+            generateSphere(map, sx, PY + 5, size + 4, 1.8, COLORS.STONE);
+        }
+        return Array.from(map.values());
+    },
+
+    MechanicalDragon: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const DY = CONFIG.FLOOR_Y + 1;
+        for (let i = 0; i < 20; i++) {
+            const angle = i * 0.25;
+            const tx = Math.sin(angle) * (i * 0.4);
+            const tz = -i * 1.2;
+            const ty = DY + Math.sin(i * 0.4) * 2 + 5;
+            generateSphere(map, tx, ty, tz, 2.2 - (i * 0.08), COLORS.DARK_GRAY);
+            setBlock(map, tx, ty + 2.2, tz, COLORS.CYAN);
+        }
+        for (let wing of [-1, 1]) {
+            for (let wx = 1; wx <= 12; wx++) {
+                const wy = DY + 12 + (wx * 0.4);
+                const wz = -wx * 0.5 - 2;
+                for (let wyy = wy - 3; wyy <= wy; wyy++) {
+                    setBlock(map, wing * wx, wyy, wz, COLORS.LIGHT_GRAY);
+                    setBlock(map, wing * wx, wyy, wz - 1, COLORS.CYAN);
+                }
+            }
+        }
+        const HY = DY + 10, HZ = 4;
+        generateSphere(map, 0, HY, HZ, 3.2, COLORS.GRAY);
+        setBlock(map, -1.8, HY + 1, HZ + 2, COLORS.RED);
+        setBlock(map, 1.8, HY + 1, HZ + 2, COLORS.RED);
+        for (let f = 1; f <= 8; f++) {
+            setBlock(map, 0, HY - 0.5, HZ + 3 + f, f % 2 === 0 ? COLORS.CYAN : COLORS.BLUE);
+        }
+        return Array.from(map.values());
+    },
+
+    LighthouseIsland: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const LY = CONFIG.FLOOR_Y + 1;
+        for (let x = -18; x <= 18; x++) {
+            for (let z = -18; z <= 18; z++) {
+                if (x * x + z * z <= 18 * 18) {
+                    setBlock(map, x, LY, z, COLORS.CYAN);
+                }
+            }
+        }
+        for (let x = -12; x <= 12; x++) {
+            for (let z = -12; z <= 12; z++) {
+                const r2 = x * x + z * z;
+                if (r2 <= 12 * 12) {
+                    const h = Math.floor((1 - r2 / 144) * 5) + 1;
+                    for (let y = 1; y <= h; y++) {
+                        setBlock(map, x, LY + y, z, y === h ? COLORS.GREEN : COLORS.STONE);
+                    }
+                }
+            }
+        }
+        const TY = LY + 6;
+        for (let y = 0; y <= 22; y++) {
+            const r = Math.max(1.8, 3.5 - y * 0.07);
+            const isRed = Math.floor(y / 4) % 2 === 1;
+            generateSphere(map, 0, TY + y, 0, r, isRed ? COLORS.RED : COLORS.WHITE, 0.5);
+        }
+        const BY = TY + 23;
+        for (let x = -2; x <= 2; x++) {
+            for (let z = -2; z <= 2; z++) {
+                setBlock(map, x, BY, z, COLORS.DARK_GRAY);
+                setBlock(map, x, BY + 4, z, COLORS.ROOF_RED);
+            }
+        }
+        setBlock(map, 0, BY + 1, 0, COLORS.YELLOW);
+        setBlock(map, 0, BY + 2, 0, COLORS.WHITE);
+        for (let b = 1; b <= 12; b++) {
+            setBlock(map, b, BY + 2, b, COLORS.YELLOW);
+            setBlock(map, -b, BY + 2, -b, COLORS.YELLOW);
+        }
+        return Array.from(map.values());
+    },
+
+    GoldenGalleon: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const GY = CONFIG.FLOOR_Y + 1;
+        for (let z = -14; z <= 14; z++) {
+            const w = Math.max(1, Math.floor(6 - (Math.abs(z) > 8 ? (Math.abs(z) - 8) * 0.7 : 0)));
+            const h = z > 8 || z < -8 ? 6 : 4;
+            for (let x = -w; x <= w; x++) {
+                for (let y = 1; y <= h; y++) {
+                    const isGold = Math.abs(x) === w || y === h;
+                    setBlock(map, x, GY + y, z, isGold ? COLORS.GOLD : COLORS.WOOD);
+                }
+            }
+        }
+        [-8, 0, 8].forEach((mz, idx) => {
+            const mastH = 18 + idx * 2;
+            for (let my = 4; my <= mastH; my++) {
+                setBlock(map, 0, GY + my, mz, COLORS.WOOD);
+            }
+            for (let sy = 8; sy <= mastH - 3; sy += 4) {
+                const sw = Math.floor(6 - (sy - 8) * 0.3);
+                for (let sx = -sw; sx <= sw; sx++) {
+                    setBlock(map, sx, GY + sy, mz - 1, COLORS.WHITE);
+                    setBlock(map, sx, GY + sy + 1, mz - 1, COLORS.WHITE);
+                }
+            }
+        });
+        for (let z = -6; z <= 6; z += 3) {
+            setBlock(map, -7, GY + 3, z, COLORS.DARK_GRAY);
+            setBlock(map, 7, GY + 3, z, COLORS.DARK_GRAY);
+        }
+        return Array.from(map.values());
+    },
+
+    SpaceStation: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const SY = CONFIG.FLOOR_Y + 20;
+        generateSphere(map, 0, SY, 0, 5, COLORS.WHITE);
+        generateSphere(map, 0, SY, 0, 3, COLORS.CYAN);
+        const ringR = 22;
+        for (let a = 0; a < Math.PI * 2; a += 0.08) {
+            const rx = Math.cos(a) * ringR;
+            const rz = Math.sin(a) * ringR;
+            generateSphere(map, rx, SY, rz, 2.2, COLORS.LIGHT_GRAY);
+            if (Math.sin(a * 4) > 0) {
+                setBlock(map, rx, SY + 1.5, rz, COLORS.CYAN);
+            }
+        }
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 2) {
+            for (let r = 5; r <= ringR; r++) {
+                const sx = Math.cos(a) * r;
+                const sz = Math.sin(a) * r;
+                setBlock(map, sx, SY, sz, COLORS.DARK_GRAY);
+            }
+        }
+        for (let x = -40; x <= 40; x++) {
+            if (Math.abs(x) > 10) {
+                for (let z = -6; z <= 6; z++) {
+                    setBlock(map, x, SY, z, COLORS.BLUE);
+                    setBlock(map, x, SY + 0.5, z, COLORS.CYAN);
+                }
+            }
+        }
+        return Array.from(map.values());
+    },
+
+    PugDog: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const PY = CONFIG.FLOOR_Y + 1;
+        const paws = [[-2.5, -2], [2.5, -2], [-2.5, 2], [2.5, 2]];
+        paws.forEach(([px, pz]) => {
+            generateSphere(map, px, PY + 1, pz, 1.5, COLORS.BLACK);
+        });
+        generateSphere(map, 0, PY + 4, 0, 4.5, COLORS.WOOD, 1.1);
+        for (let a = 0; a < Math.PI * 2; a += 0.3) {
+            const cx = Math.cos(a) * 3.8;
+            const cz = Math.sin(a) * 3.8;
+            setBlock(map, cx, PY + 7, cz, COLORS.RED);
+        }
+        setBlock(map, 0, PY + 6.5, 4.0, COLORS.GOLD);
+
+        const HY = PY + 10;
+        generateSphere(map, 0, HY, 0.5, 4.0, COLORS.WOOD);
+        generateSphere(map, 0, HY - 0.5, 3.5, 2.2, COLORS.BLACK, 0.8);
+        setBlock(map, 0, HY + 0.5, 4.2, COLORS.BLACK);
+        setBlock(map, -1.8, HY + 1, 3.8, COLORS.BLACK); setBlock(map, 1.8, HY + 1, 3.8, COLORS.BLACK);
+        setBlock(map, -1.8, HY + 1.3, 4.0, COLORS.WHITE); setBlock(map, 1.8, HY + 1.3, 4.0, COLORS.WHITE);
+        generateSphere(map, -3.8, HY + 2, 0.5, 1.8, COLORS.BLACK);
+        generateSphere(map, 3.8, HY + 2, 0.5, 1.8, COLORS.BLACK);
+        for (let t = 0; t <= 5; t++) {
+            const a = t * 0.8;
+            setBlock(map, Math.sin(a) * 1.5, PY + 5 + t * 0.5, -4 - Math.cos(a) * 1.5, COLORS.WOOD);
+        }
+        return Array.from(map.values());
+    },
+
+    CyberSkull: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const SY = CONFIG.FLOOR_Y + 1;
+        generateSphere(map, 0, SY + 12, 0, 7.5, COLORS.LIGHT_GRAY, 1.1);
+        for (let x = -4; x <= 4; x++) {
+            for (let z = 0; z <= 5; z++) {
+                for (let y = 1; y <= 5; y++) {
+                    const isTeeth = y === 5 && z === 5 && x % 2 === 0;
+                    setBlock(map, x, SY + y, z, isTeeth ? COLORS.WHITE : COLORS.GRAY);
+                }
+            }
+        }
+        for (let x = -3; x <= -1; x++) {
+            for (let y = 10; y <= 13; y++) {
+                setBlock(map, x, SY + y, 6, COLORS.BLACK);
+                setBlock(map, x + 4, SY + y, 6, COLORS.BLACK);
+            }
+        }
+        setBlock(map, -2, SY + 11, 5, COLORS.CYAN);
+        setBlock(map, 2, SY + 11, 5, COLORS.MAGENTA);
+        setBlock(map, 0, SY + 8, 6, COLORS.BLACK);
+        setBlock(map, 0, SY + 9, 6, COLORS.BLACK);
+        for (let y = 8; y <= 16; y++) {
+            setBlock(map, -7.5, SY + y, (y % 3), COLORS.CYAN);
+            setBlock(map, 7.5, SY + y, (y % 3), COLORS.MAGENTA);
+        }
+        return Array.from(map.values());
+    },
+
+    MedievalCastle: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const CY = CONFIG.FLOOR_Y + 1;
+        // Outer Walls
+        for (let x = -12; x <= 12; x++) {
+            for (let z = -12; z <= 12; z++) {
+                const isWall = Math.abs(x) === 12 || Math.abs(z) === 12;
+                if (isWall) {
+                    for (let y = 1; y <= 8; y++) {
+                        const isCrenellation = y === 8 && ((x + z) % 2 === 0);
+                        if (y < 8 || isCrenellation) {
+                            // Gate entrance gap on front wall
+                            if (z === 12 && Math.abs(x) <= 3 && y <= 5) continue;
+                            setBlock(map, x, CY + y, z, COLORS.STONE);
+                        }
+                    }
+                }
+            }
+        }
+        // Corner Towers
+        const towers = [[-12, -12], [12, -12], [-12, 12], [12, 12]];
+        towers.forEach(([tx, tz]) => {
+            for (let y = 1; y <= 12; y++) {
+                const r = y > 10 ? 2.5 : 2.0;
+                generateSphere(map, tx, CY + y, tz, r, COLORS.STONE, 0.4);
+            }
+            // Roof cones
+            for (let ry = 0; ry <= 4; ry++) {
+                const rw = 2.5 - ry * 0.5;
+                for (let rx = -rw; rx <= rw; rx++) {
+                    for (let rz = -rw; rz <= rw; rz++) {
+                        if (rx * rx + rz * rz <= rw * rw) {
+                            setBlock(map, tx + rx, CY + 13 + ry, tz + rz, COLORS.ROOF_RED);
+                        }
+                    }
+                }
+            }
+        });
+        // Central Keep Donjon
+        for (let x = -5; x <= 5; x++) {
+            for (let z = -5; z <= 5; z++) {
+                for (let y = 1; y <= 16; y++) {
+                    const isOuter = Math.abs(x) === 5 || Math.abs(z) === 5 || y === 16;
+                    if (isOuter) setBlock(map, x, CY + y, z, COLORS.GRAY);
+                }
+            }
+        }
+        // Banner flag on central keep
+        for (let fy = 17; fy <= 22; fy++) {
+            setBlock(map, 0, CY + fy, 0, COLORS.WOOD);
+        }
+        for (let fx = 1; fx <= 4; fx++) {
+            setBlock(map, fx, CY + 21, 0, COLORS.BLUE);
+            setBlock(map, fx, CY + 20, 0, COLORS.GOLD);
+        }
+        // Wooden Drawbridge
+        for (let z = 12; z <= 17; z++) {
+            for (let x = -3; x <= 3; x++) {
+                setBlock(map, x, CY + 1, z, COLORS.WOOD);
+            }
+        }
+        return Array.from(map.values());
+    },
+
+    SteampunkAirship: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const AY = CONFIG.FLOOR_Y + 16;
+        // Gasbag Ellipsoid Hull
+        for (let z = -15; z <= 15; z++) {
+            const radius = 6.5 * Math.sin(Math.PI * (z + 15) / 30);
+            generateSphere(map, 0, AY, z, radius, COLORS.COPPER, 0.8);
+            if (z % 3 === 0) {
+                for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+                    const bx = Math.cos(a) * (radius + 0.3);
+                    const by = Math.sin(a) * (radius + 0.3);
+                    setBlock(map, bx, AY + by, z, COLORS.GOLD);
+                }
+            }
+        }
+        // Gondola Cabin under gasbag
+        const GY = AY - 10;
+        for (let x = -3; x <= 3; x++) {
+            for (let z = -10; z <= 10; z++) {
+                for (let y = 1; y <= 4; y++) {
+                    const isOuter = Math.abs(x) === 3 || Math.abs(z) === 10 || y === 1;
+                    setBlock(map, x, GY + y, z, isOuter ? COLORS.WOOD : COLORS.GOLD);
+                }
+            }
+        }
+        // Rigging cables connecting gondola to balloon
+        [-8, -2, 4, 8].forEach(rz => {
+            setBlock(map, -3, GY + 5, rz, COLORS.BLACK); setBlock(map, -3, GY + 7, rz, COLORS.BLACK);
+            setBlock(map, 3, GY + 5, rz, COLORS.BLACK); setBlock(map, 3, GY + 7, rz, COLORS.BLACK);
+        });
+        // Dual Rear Propellers & Furnace
+        for (let side of [-4, 4]) {
+            setBlock(map, side, GY + 2, -12, COLORS.COPPER);
+            for (let p = -3; p <= 3; p++) {
+                setBlock(map, side + p * 0.7, GY + 2, -13, COLORS.GOLD);
+                setBlock(map, side, GY + 2 + p * 0.7, -13, COLORS.GOLD);
+            }
+        }
+        // Glowing Furnace Exhaust
+        setBlock(map, 0, GY + 2, -11, COLORS.ORANGE);
+        setBlock(map, 0, GY + 3, -11, COLORS.YELLOW);
+        return Array.from(map.values());
+    },
+
+    ArcadeCabinet: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const VY = CONFIG.FLOOR_Y + 1;
+        // Main Body Box Structure
+        for (let x = -5; x <= 5; x++) {
+            for (let z = -6; z <= 6; z++) {
+                for (let y = 1; y <= 22; y++) {
+                    const isFrontSlantedScreen = y >= 10 && y <= 17 && z >= 2 && z <= 5;
+                    const isControlDeck = y >= 7 && y <= 9 && z >= 3 && z <= 6;
+                    if (isFrontSlantedScreen) {
+                        setBlock(map, x, VY + y, z, Math.abs(x) <= 4 ? COLORS.BLACK : COLORS.DARK);
+                    } else if (isControlDeck) {
+                        setBlock(map, x, VY + y, z, COLORS.DARK_GRAY);
+                    } else {
+                        const isSide = Math.abs(x) === 5;
+                        const isMarquee = y >= 19 && z === 5;
+                        const col = isMarquee ? COLORS.CYAN : (isSide ? COLORS.MAGENTA : COLORS.DARK);
+                        setBlock(map, x, VY + y, z, col);
+                    }
+                }
+            }
+        }
+        // Glowing Game Screen Content
+        for (let x = -3; x <= 3; x++) {
+            for (let y = 11; y <= 16; y++) {
+                const isPixelArt = (x + y) % 2 === 0;
+                setBlock(map, x, VY + y, 5, isPixelArt ? COLORS.CYAN : COLORS.PURPLE);
+            }
+        }
+        // Joystick & Buttons on Control Deck
+        setBlock(map, -2, VY + 10, 5, COLORS.BLACK);
+        setBlock(map, -2, VY + 11, 5, COLORS.RED); // Joystick ball
+        setBlock(map, 1, VY + 10, 5, COLORS.YELLOW); // Button A
+        setBlock(map, 2, VY + 10, 5, COLORS.BLUE);   // Button B
+        setBlock(map, 3, VY + 10, 5, COLORS.GREEN);  // Button C
+        // Coin Doors & Coin Slots
+        setBlock(map, -2, VY + 4, 6.2, COLORS.RED);
+        setBlock(map, 2, VY + 4, 6.2, COLORS.RED);
+        return Array.from(map.values());
+    },
+
+    CyberSamurai: (): VoxelData[] => {
+        const map = new Map<string, VoxelData>();
+        const SY = CONFIG.FLOOR_Y + 1;
+        // Legs & Boots
+        for (let side of [-2.5, 2.5]) {
+            for (let y = 1; y <= 7; y++) {
+                generateSphere(map, side, SY + y, 0, 1.6, y <= 2 ? COLORS.BLACK : COLORS.DARK_GRAY);
+            }
+        }
+        // Torso Armor & Sode Shoulder Pads
+        for (let y = 8; y <= 15; y++) {
+            for (let x = -3.5; x <= 3.5; x++) {
+                for (let z = -2; z <= 2; z++) {
+                    const isChestPattern = Math.abs(x) <= 2 && z === 2 && y % 2 === 0;
+                    setBlock(map, x, SY + y, z, isChestPattern ? COLORS.GOLD : COLORS.DARK);
+                }
+            }
+        }
+        // Shoulder Sode Armor
+        [-5, 5].forEach(sx => {
+            for (let y = 12; y <= 15; y++) {
+                for (let z = -2; z <= 2; z++) {
+                    setBlock(map, sx, SY + y, z, COLORS.RED);
+                }
+            }
+        });
+        // Kabuto Helmet & Glowing Visor
+        const HY = SY + 17;
+        generateSphere(map, 0, HY, 0, 3.2, COLORS.DARK);
+        for (let x = -2; x <= 2; x++) {
+            setBlock(map, x, HY - 0.5, 2.8, COLORS.CYAN); // Neon Visor
+        }
+        // Crescent Gold Horns (Maedate)
+        for (let h = 0; h <= 5; h++) {
+            setBlock(map, -h * 0.8, HY + 2 + h * 0.4, 2.5, COLORS.GOLD);
+            setBlock(map, h * 0.8, HY + 2 + h * 0.4, 2.5, COLORS.GOLD);
+        }
+        // Cyber Katana Sword
+        for (let ky = 4; ky <= 24; ky++) {
+            const isBlade = ky >= 7;
+            setBlock(map, 6, SY + ky, 0, isBlade ? COLORS.CYAN : COLORS.GOLD);
+            if (isBlade) setBlock(map, 6, SY + ky, 0.5, COLORS.WHITE);
+        }
         return Array.from(map.values());
     },
 

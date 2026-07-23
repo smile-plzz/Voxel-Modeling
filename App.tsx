@@ -8,8 +8,8 @@ import { VoxelEngine } from './services/VoxelEngine';
 import { UIOverlay } from './components/UIOverlay';
 import { JsonModal } from './components/JsonModal';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { Generators, PresetType, upscaleVoxelData } from './utils/voxelGenerators';
-import { AppState, VoxelData, SavedModel, ToolType, VoxelEngineStats } from './types';
+import { Generators, PresetType } from './utils/voxelGenerators';
+import { AppState, VoxelData, SavedModel, ToolType, VoxelEngineStats, VoxelLayoutStyle } from './types';
 
 const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,7 +33,8 @@ const App: React.FC = () => {
   const [showWelcome, setShowWelcome] = useState(true);
   const [jsonData, setJsonData] = useState('');
   const [isAutoRotate, setIsAutoRotate] = useState(true);
-  const [densityScale, setDensityScale] = useState<number>(1);
+  const [layoutStyle, setLayoutStyle] = useState<VoxelLayoutStyle>('cube');
+  const [explosionRadius, setExplosionRadius] = useState<number>(20);
 
   // --- State for Custom Models ---
   const [currentBaseModel, setCurrentBaseModel] = useState<PresetType>('MegaMetropolis100k');
@@ -71,11 +72,9 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const getScaledModelData = (type: PresetType, scale: number): VoxelData[] => {
+  const getModelData = (type: PresetType): VoxelData[] => {
     const generator = Generators[type];
-    if (!generator) return [];
-    const baseData = generator();
-    return scale > 1 ? upscaleVoxelData(baseData, scale) : baseData;
+    return generator ? generator() : [];
   };
 
   const handleSelectTool = (tool: ToolType) => {
@@ -94,39 +93,34 @@ const App: React.FC = () => {
 
   const handleNewScene = (type: PresetType) => {
     if (engineRef.current) {
-      const data = getScaledModelData(type, densityScale);
+      const data = getModelData(type);
       engineRef.current.loadInitialModel(data);
       setCurrentBaseModel(type);
     }
   };
 
-  const handleDensityChange = (newScale: number) => {
-    setDensityScale(newScale);
-    if (engineRef.current) {
-      const data = getScaledModelData(currentBaseModel, newScale);
-      engineRef.current.loadInitialModel(data);
-    }
+  const handleSelectLayoutStyle = (style: VoxelLayoutStyle) => {
+    setLayoutStyle(style);
+    engineRef.current?.setVoxelLayoutStyle(style);
   };
 
   const handleSelectCustomBuild = (model: SavedModel) => {
       if (engineRef.current) {
-          const data = densityScale > 1 ? upscaleVoxelData(model.data, densityScale) : model.data;
-          engineRef.current.loadInitialModel(data);
+          engineRef.current.loadInitialModel(model.data);
           setCurrentBaseModel(model.name as PresetType);
       }
   };
 
   const handleRebuild = (type: PresetType) => {
     if (engineRef.current) {
-      const data = getScaledModelData(type, densityScale);
+      const data = getModelData(type);
       engineRef.current.rebuild(data);
     }
   };
 
   const handleSelectCustomRebuild = (model: SavedModel) => {
       if (engineRef.current) {
-          const data = densityScale > 1 ? upscaleVoxelData(model.data, densityScale) : model.data;
-          engineRef.current.rebuild(data);
+          engineRef.current.rebuild(model.data);
       }
   };
 
@@ -186,6 +180,13 @@ const App: React.FC = () => {
       }
   };
 
+  const handleExplosionRadiusChange = (radius: number) => {
+      setExplosionRadius(radius);
+      if (engineRef.current) {
+          engineRef.current.setExplosionRadius(radius);
+      }
+  };
+
   const relevantRebuilds = customRebuilds.filter(
       r => r.baseModel === currentBaseModel
   );
@@ -207,10 +208,12 @@ const App: React.FC = () => {
         customRebuilds={relevantRebuilds} 
         isAutoRotate={isAutoRotate}
         isInfoVisible={showWelcome}
-        densityScale={densityScale}
+        layoutStyle={layoutStyle}
+        explosionRadius={explosionRadius}
         onSelectTool={handleSelectTool}
         onSelectPaintColor={handleSelectPaintColor}
-        onDensityChange={handleDensityChange}
+        onExplosionRadiusChange={handleExplosionRadiusChange}
+        onSelectLayoutStyle={handleSelectLayoutStyle}
         onDismantle={handleDismantle}
         onRebuild={handleRebuild}
         onNewScene={handleNewScene}

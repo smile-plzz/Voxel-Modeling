@@ -19,26 +19,32 @@ An interactive 3D voxel physics engine, sculpture playground, and morphing sandb
   - 💥 **Mega War Hammer**: Massive impact clearing large chunks in a single swing.
 - **✨ Floating Debris Particle System**: Spawns floating, color-matched 3D debris fragments that erupt, tumble, and float upward with thermal draft physics whenever a block is hit or broken.
 - **Radial Explosion Dynamics**: Voxels blast outward in proportion to their distance from the impact point.
+- **💥 Configurable Explosion Tool**: Detonate radial kinetic blast waves at any targeted point on the sculpture, with a real-time adjustable blast radius slider (from surgical 6m to massive 60m blasts) and instant presets (10m, 20m, 35m, 55m).
 - **Interactive Raycasting**: Click directly on any voxel in the 3D model canvas to land a targeted hammer blow on that exact spot!
 - **Impact Visual Effects**: Features color-matched floating debris bursts, expanding shockwave rings, glowing spark particle bursts, and visceral camera shake on impact.
 
-### 🏙️ Mega Presets & High-Performance Instanced Renderer
-- **Up to 250,000+ Voxels**: Utilizes Three.js `InstancedMesh` with `DynamicDrawUsage` for silky smooth 60 FPS performance.
-- **Mega Scenes**:
-  - 🏙️ **Mega Metropolis** (~100,000 blocks)
-  - 🌋 **Volcano Island** (~120,000 blocks)
-  - 🌐 **Sphere Matrix** (~100,000 blocks)
-  - 🗿 **Titan Colossus** (~150,000 blocks)
-  - ✨ **Galaxy Cluster** (~200,000 blocks)
-  - 🌆 **Cyber Megacity** (~250,000 blocks)
-- **Standard Presets**: Majestic Eagle, Fire Dragon, Sci-Fi Robot, Stone Castle, Star Fighter, Sports Car, Bamboo Panda, Pirate Galleon, and more.
+### 🧱 Voxel Layout Choosability (Block Geometry Styles)
+- Switch voxel geometry layouts in real-time:
+  - 🧊 **Cube**: Classic 3D Voxels.
+  - 🧰 **Bevel**: Smooth chamfered blocks.
+  - 🔮 **Orb**: Spherical 3D orb matrix.
+  - 🏛️ **Pillars**: Cylindrical peg pillars.
+  - 💎 **Gem**: Octahedron diamond crystals.
+  - 🧱 **Toy Brick**: Studded Lego-style bricks.
 
-### ⚙️ Density Scale Sub-divider
-- Adjust scene density on the fly:
-  - **1x** (Base Count)
-  - **8x** (~25k blocks)
-  - **27x** (~100k blocks)
-  - **64x** (150k+ blocks)
+### 🏙️ Mega & Standard Model Gallery
+- **High-Performance Instanced Renderer**: Up to 250,000+ Voxels rendered smoothly via Three.js `InstancedMesh`.
+- **Expanded Model Library**:
+  - 🏎️ **Cyberpunk Sports Car** (Neon underglow & spoiler)
+  - 🏛️ **Golden Pyramid Tomb** (Pharaoh entrance & twin Sphinx guardians)
+  - 🐉 **Mechanical Cyber Dragon** (Spine plates & plasma beam)
+  - 🗼 **Coastal Lighthouse** (Island, beacon light & ocean waves)
+  - ⛵ **Royal Golden Galleon** (Triple masts & brass cannons)
+  - 🛸 **Orbital Space Station** (Habitat ring & solar arrays)
+  - 🐶 **Cute Pug Puppy** (Wrinkled snout & collar)
+  - 💀 **Cybernetic Skull** (Glowing eye sockets & neural wires)
+- **Mega Scenes**: Mega Metropolis (~100k), Volcano Island (~120k), Sphere Matrix (~100k), Titan Colossus (~150k), Galaxy Cluster (~200k), Cyber Megacity (~250k).
+- **Classic Models**: Majestic Eagle, Fire Dragon, Sci-Fi Robot, Stone Castle, Star Fighter, Sports Car, Bamboo Panda, Pirate Galleon, and more.
 
 ### 🔄 Fast O(N) Color-Bucket Morphing & Rebuilding
 - Rebuilds dismantled voxel rubble into any target sculpture by matching color hexes in linear time $O(N)$ with zero stutters.
@@ -58,7 +64,7 @@ An interactive 3D voxel physics engine, sculpture playground, and morphing sandb
 | **Hammer Strike (Targeted)** | Click directly on any voxel in the 3D canvas |
 | **Hammer Smash (General)** | Click the **HAMMER SMASH** button at the bottom |
 | **Rebuild Sculpture** | Click **Rebuild Into...** when model is dismantled |
-| **Change Density Scale** | Select density pill (1x, 8x, 27x, 64x) |
+| **Change Voxel Layout** | Select Voxel Layout pill (Cube, Bevel, Orb, Pillar, Gem, Brick) |
 | **Export / Share** | Click **Share** button in top toolbar |
 
 ---

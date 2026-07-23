@@ -5,8 +5,29 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { AppState, SimulationVoxel, RebuildTarget, VoxelData } from '../types';
+import { AppState, SimulationVoxel, RebuildTarget, VoxelData, ToolType, VoxelEngineStats } from '../types';
 import { CONFIG } from '../utils/voxelConstants';
+
+interface DebrisParticle {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  rx: number;
+  ry: number;
+  rz: number;
+  rvx: number;
+  rvy: number;
+  rvz: number;
+  scale: number;
+  initialScale: number;
+  color: THREE.Color;
+  life: number;
+  maxLife: number;
+  active: boolean;
+}
 
 export class VoxelEngine {
   private container: HTMLElement;
@@ -24,20 +45,41 @@ export class VoxelEngine {
   private state: AppState = AppState.STABLE;
   private onStateChange: (state: AppState) => void;
   private onCountChange: (count: number) => void;
+  private onStatsChange: (stats: VoxelEngineStats) => void;
   private animationId: number = 0;
 
-  // --- Hammer & Impact Animation Props ---
+  // --- Interactive Tools & Play Modes ---
+  private activeTool: ToolType = 'miniHammer';
+  private paintColor: number = 0xec4899; // Default Neon Pink
+  private hitsCount: number = 0;
+
+  // --- Hammer & Impact FX Props ---
   private hammerGroup: THREE.Group;
   private shockwaveMesh: THREE.Mesh;
   private sparkParticles: THREE.Points;
   private sparkGeom: THREE.BufferGeometry;
   private sparkPositions: Float32Array;
   private sparkVelocities: Float32Array;
-  
+
+  // --- Floating Debris Particle System Props ---
+  private debrisMesh!: THREE.InstancedMesh;
+  private debrisParticles: DebrisParticle[] = [];
+  private maxDebrisCount: number = 600;
+  private debrisDummy = new THREE.Object3D();
+
+  // --- Dynamite FX Props ---
+  private dynamiteGroup: THREE.Group;
+  private isDynamiteActive: boolean = false;
+  private dynamiteStartTime: number = 0;
+  private dynamiteTargetPoint = new THREE.Vector3();
+
   private isSmashing: boolean = false;
   private smashProgress: number = 0;
   private smashStartPoint = new THREE.Vector3();
   private smashTargetPoint = new THREE.Vector3();
+  private currentHitRadius: number = 8;
+  private currentBlastForce: number = 1.2;
+
   private cameraShakeIntensity: number = 0;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
@@ -51,11 +93,13 @@ export class VoxelEngine {
   constructor(
     container: HTMLElement, 
     onStateChange: (state: AppState) => void,
-    onCountChange: (count: number) => void
+    onCountChange: (count: number) => void,
+    onStatsChange: (stats: VoxelEngineStats) => void
   ) {
     this.container = container;
     this.onStateChange = onStateChange;
     this.onCountChange = onCountChange;
+    this.onStatsChange = onStatsChange;
 
     // Init Three.js
     this.scene = new THREE.Scene();
@@ -100,13 +144,19 @@ export class VoxelEngine {
     floor.receiveShadow = true;
     this.scene.add(floor);
 
-    // Create Hammer Mesh & FX
+    // Create 3D Hammer Mesh
     this.hammerGroup = this.createHammerMesh();
     this.scene.add(this.hammerGroup);
 
+    // Create 3D Dynamite Mesh
+    this.dynamiteGroup = this.createDynamiteMesh();
+    this.scene.add(this.dynamiteGroup);
+
+    // Shockwave Ring
     this.shockwaveMesh = this.createShockwaveRing();
     this.scene.add(this.shockwaveMesh);
 
+    // Spark Particles
     const sparkObj = this.createSparkParticles();
     this.sparkParticles = sparkObj.points;
     this.sparkGeom = sparkObj.geom;
@@ -114,11 +164,23 @@ export class VoxelEngine {
     this.sparkVelocities = sparkObj.velocities;
     this.scene.add(this.sparkParticles);
 
-    // Click Raycaster Listener for Interactive Hammering
+    // Floating Debris Particle System
+    this.debrisMesh = this.createDebrisParticleSystem();
+    this.scene.add(this.debrisMesh);
+
+    // Pointer Interaction Handler
     this.container.addEventListener('pointerdown', this.handlePointerDown.bind(this));
 
     this.animate = this.animate.bind(this);
     this.animate();
+  }
+
+  public setTool(tool: ToolType) {
+    this.activeTool = tool;
+  }
+
+  public setPaintColor(colorHex: number) {
+    this.paintColor = colorHex;
   }
 
   /**
@@ -169,6 +231,50 @@ export class VoxelEngine {
     return hammer;
   }
 
+  private createDynamiteMesh(): THREE.Group {
+    const dyn = new THREE.Group();
+
+    // Red TNT Sticks
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.4 });
+    const yellowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.5 });
+    const blackMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.8 });
+
+    // 3 Cylinders bundled together
+    const offsets = [
+      { x: -0.8, z: 0 },
+      { x: 0.8, z: 0 },
+      { x: 0, z: 1.2 }
+    ];
+
+    offsets.forEach(off => {
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 6, 12), redMat);
+      stick.position.set(off.x, 3, off.z);
+      stick.castShadow = true;
+      dyn.add(stick);
+    });
+
+    // Yellow Strap
+    const strap = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 1, 16), yellowMat);
+    strap.position.y = 3;
+    dyn.add(strap);
+
+    // Black Fuse Wire
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.5, 8), blackMat);
+    fuse.position.set(0, 6.5, 0);
+    fuse.rotation.z = -0.3;
+    dyn.add(fuse);
+
+    // Glowing Spark at top of fuse
+    const sparkMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8), sparkMat);
+    spark.position.set(-0.4, 7.5, 0);
+    spark.name = "spark";
+    dyn.add(spark);
+
+    dyn.visible = false;
+    return dyn;
+  }
+
   private createShockwaveRing(): THREE.Mesh {
     const geom = new THREE.RingGeometry(0.1, 1.5, 32);
     geom.rotateX(-Math.PI / 2);
@@ -184,7 +290,7 @@ export class VoxelEngine {
   }
 
   private createSparkParticles() {
-    const pCount = 120;
+    const pCount = 150;
     const geom = new THREE.BufferGeometry();
     const positions = new Float32Array(pCount * 3);
     const velocities = new Float32Array(pCount * 3);
@@ -192,7 +298,7 @@ export class VoxelEngine {
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const mat = new THREE.PointsMaterial({
       color: 0xfcb316,
-      size: 1.2,
+      size: 1.4,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending
@@ -203,8 +309,93 @@ export class VoxelEngine {
     return { points, geom, positions, velocities };
   }
 
+  private createDebrisParticleSystem(): THREE.InstancedMesh {
+    const geom = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+    const mat = new THREE.MeshStandardMaterial({
+      roughness: 0.5,
+      metalness: 0.2,
+      transparent: true,
+      opacity: 0.95
+    });
+    const mesh = new THREE.InstancedMesh(geom, mat, this.maxDebrisCount);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    this.debrisParticles = new Array(this.maxDebrisCount);
+    for (let i = 0; i < this.maxDebrisCount; i++) {
+      this.debrisParticles[i] = {
+        x: 0, y: -1000, z: 0,
+        vx: 0, vy: 0, vz: 0,
+        rx: 0, ry: 0, rz: 0,
+        rvx: 0, rvy: 0, rvz: 0,
+        scale: 0,
+        initialScale: 0,
+        color: new THREE.Color(0xffffff),
+        life: 0,
+        maxLife: 1,
+        active: false
+      };
+      this.debrisDummy.position.set(0, -1000, 0);
+      this.debrisDummy.scale.set(0, 0, 0);
+      this.debrisDummy.updateMatrix();
+      mesh.setMatrixAt(i, this.debrisDummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    return mesh;
+  }
+
+  /**
+   * Spawns floating debris fragments at a hit/impact location
+   */
+  public spawnFloatingDebris(impact: THREE.Vector3, countToSpawn: number, blastForce: number, sampleColors: THREE.Color[]) {
+    let spawned = 0;
+    for (let i = 0; i < this.maxDebrisCount && spawned < countToSpawn; i++) {
+      const p = this.debrisParticles[i];
+      if (!p.active || p.life <= 0) {
+        p.active = true;
+        p.x = impact.x + (Math.random() - 0.5) * 2.5;
+        p.y = impact.y + (Math.random() - 0.5) * 2.5;
+        p.z = impact.z + (Math.random() - 0.5) * 2.5;
+
+        // Outward radial direction + strong upward thermal buoyancy
+        const theta = Math.random() * Math.PI * 2;
+        const phi = (Math.random() - 0.1) * Math.PI * 0.5;
+        const speed = (0.6 + Math.random() * 1.8) * Math.min(2.5, blastForce);
+
+        p.vx = Math.cos(theta) * Math.cos(phi) * speed;
+        p.vy = Math.sin(phi) * speed + (0.9 + Math.random() * 1.4); // Floating upward impulse
+        p.vz = Math.sin(theta) * Math.cos(phi) * speed;
+
+        p.rx = Math.random() * Math.PI * 2;
+        p.ry = Math.random() * Math.PI * 2;
+        p.rz = Math.random() * Math.PI * 2;
+
+        p.rvx = (Math.random() - 0.5) * 0.5;
+        p.rvy = (Math.random() - 0.5) * 0.5;
+        p.rvz = (Math.random() - 0.5) * 0.5;
+
+        p.initialScale = 0.4 + Math.random() * 0.9;
+        p.scale = p.initialScale;
+        p.life = 1.0;
+        p.maxLife = 1.2 + Math.random() * 1.6;
+
+        if (sampleColors.length > 0) {
+          const randColor = sampleColors[Math.floor(Math.random() * sampleColors.length)];
+          p.color.copy(randColor);
+        } else {
+          p.color.setHex(0xf59e0b);
+        }
+        this.debrisMesh.setColorAt(i, p.color);
+
+        spawned++;
+      }
+    }
+    if (this.debrisMesh.instanceColor) {
+      this.debrisMesh.instanceColor.needsUpdate = true;
+    }
+  }
+
   private handlePointerDown(e: MouseEvent) {
-    if (this.state !== AppState.STABLE || this.isSmashing || !this.instanceMesh) return;
+    if (this.state === AppState.REBUILDING || this.isSmashing || !this.instanceMesh) return;
 
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -215,19 +406,29 @@ export class VoxelEngine {
 
     if (intersects.length > 0) {
       const hitPoint = intersects[0].point;
-      this.dismantle(hitPoint);
+
+      if (this.activeTool === 'paintbrush') {
+        this.paintAtPoint(hitPoint);
+      } else if (this.activeTool === 'dynamite') {
+        this.plantDynamiteAt(hitPoint);
+      } else if (this.activeTool === 'magnet') {
+        this.applyMagnetAt(hitPoint);
+      } else {
+        // Hammer Modes (miniHammer, sledgeHammer, megaHammer)
+        this.triggerHammerStrike(hitPoint);
+      }
     }
   }
 
   public loadInitialModel(data: VoxelData[]) {
     this.createVoxels(data);
-    this.onCountChange(this.voxels.length);
+    this.hitsCount = 0;
+    this.emitStats();
     this.state = AppState.STABLE;
     this.onStateChange(this.state);
   }
 
   private createVoxels(data: VoxelData[]) {
-    // Clear existing
     if (this.instanceMesh) {
       this.scene.remove(this.instanceMesh);
       this.instanceMesh.geometry.dispose();
@@ -258,13 +459,13 @@ export class VoxelEngine {
             id: i,
             x: v.x, y: v.y, z: v.z, color: c,
             vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0,
-            rvx: 0, rvy: 0, rvz: 0
+            rvx: 0, rvy: 0, rvz: 0,
+            isPhysicsActive: false
         };
     }
 
     this.modelBounds = { minX, maxX, minY, maxY, minZ, maxZ };
 
-    // Adjust camera target & position based on bounding box
     const maxDim = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 10);
     const centerY = (minY + maxY) / 2;
     this.controls.target.set(0, Math.max(5, centerY), 0);
@@ -288,6 +489,7 @@ export class VoxelEngine {
     }
 
     this.scene.add(this.instanceMesh);
+    this.onCountChange(count);
     this.draw();
   }
 
@@ -308,56 +510,124 @@ export class VoxelEngine {
     mesh.instanceMatrix.needsUpdate = true;
   }
 
+  private emitStats() {
+    const totalCount = this.voxels.length;
+    if (totalCount === 0) return;
+
+    let intactCount = 0;
+    for (let i = 0; i < totalCount; i++) {
+      if (!this.voxels[i].isPhysicsActive) {
+        intactCount++;
+      }
+    }
+
+    const integrityPercent = Math.max(0, Math.round((intactCount / totalCount) * 100));
+    this.onStatsChange({
+      intactCount,
+      totalCount,
+      hitsCount: this.hitsCount,
+      integrityPercent
+    });
+  }
+
   /**
-   * Initiates the 3D Voxel Hammer Smash Animation!
+   * Main Hammer Dismantle Trigger (Supports button click or tap)
    */
   public dismantle(customHitPoint?: THREE.Vector3) {
-    if (this.state !== AppState.STABLE || this.isSmashing) return;
+    if (this.isSmashing) return;
 
-    // Pick target hit point
     const hitPoint = customHitPoint || new THREE.Vector3(
       (this.modelBounds.minX + this.modelBounds.maxX) / 2,
-      this.modelBounds.maxY,
+      (this.modelBounds.minY + this.modelBounds.maxY) / 2,
       (this.modelBounds.minZ + this.modelBounds.maxZ) / 2
     );
 
+    this.triggerHammerStrike(hitPoint);
+  }
+
+  /**
+   * Triggers the 3D War Hammer Strike at a specified 3D impact point
+   */
+  public triggerHammerStrike(hitPoint: THREE.Vector3) {
+    if (this.isSmashing) return;
+
+    let scale = 0.7; // Mini hammer
+    let radius = 8;
+    let blastForce = 1.2;
+
+    if (this.activeTool === 'sledgeHammer') {
+      scale = 1.3;
+      radius = 18;
+      blastForce = 2.4;
+    } else if (this.activeTool === 'megaHammer') {
+      scale = 2.4;
+      radius = 99999; // Total shatter
+      blastForce = 4.0;
+    }
+
+    this.currentHitRadius = radius;
+    this.currentBlastForce = blastForce;
+
     this.smashTargetPoint.copy(hitPoint);
     this.smashStartPoint.set(
-      hitPoint.x - 12,
-      hitPoint.y + 28,
-      hitPoint.z + 15
+      hitPoint.x - scale * 8,
+      hitPoint.y + scale * 18,
+      hitPoint.z + scale * 10
     );
 
     this.isSmashing = true;
     this.smashProgress = 0;
     this.hammerGroup.position.copy(this.smashStartPoint);
+    this.hammerGroup.scale.set(scale, scale, scale);
     this.hammerGroup.rotation.set(-Math.PI / 4, Math.PI / 4, Math.PI / 3);
-    this.hammerGroup.scale.set(1.5, 1.5, 1.5);
     this.hammerGroup.visible = true;
   }
 
-  private triggerExplosionAt(impact: THREE.Vector3) {
-    this.state = AppState.DISMANTLING;
-    this.onStateChange(this.state);
+  /**
+   * Localized Impact Blast Routine
+   */
+  private triggerImpactAt(impact: THREE.Vector3, radius: number, blastForce: number) {
+    this.hitsCount++;
 
     const count = this.voxels.length;
+    let affectedThisHit = 0;
+    const sampledColors: THREE.Color[] = [];
+
     for (let i = 0; i < count; i++) {
         const v = this.voxels[i];
+        
+        // Skip voxels that are already physics-active
+        if (v.isPhysicsActive && radius < 1000) continue;
+
         const dx = v.x - impact.x;
         const dy = v.y - impact.y;
         const dz = v.z - impact.z;
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.1;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-        // Radial blast force proportional to distance from impact
-        const force = Math.max(0.4, 4.5 / (1 + dist * 0.08));
-        v.vx = (dx / dist) * force + (Math.random() - 0.5) * 0.5;
-        v.vy = Math.max(0.3, (dy / dist) * force) + Math.random() * 0.9;
-        v.vz = (dz / dist) * force + (Math.random() - 0.5) * 0.5;
+        if (dist <= radius) {
+          v.isPhysicsActive = true;
+          affectedThisHit++;
 
-        v.rvx = (Math.random() - 0.5) * 0.4;
-        v.rvy = (Math.random() - 0.5) * 0.4;
-        v.rvz = (Math.random() - 0.5) * 0.4;
+          if (sampledColors.length < 30) {
+            sampledColors.push(v.color.clone());
+          }
+
+          const safeDist = Math.max(0.1, dist);
+          const force = Math.max(0.3, blastForce / (1 + safeDist * 0.12));
+
+          v.vx = (dx / safeDist) * force + (Math.random() - 0.5) * 0.6;
+          v.vy = Math.max(0.3, (dy / safeDist) * force) + Math.random() * 1.0;
+          v.vz = (dz / safeDist) * force + (Math.random() - 0.5) * 0.6;
+
+          v.rvx = (Math.random() - 0.5) * 0.5;
+          v.rvy = (Math.random() - 0.5) * 0.5;
+          v.rvz = (Math.random() - 0.5) * 0.5;
+        }
     }
+
+    // Spawn floating debris particle burst matching destroyed voxel colors
+    const debrisAmount = Math.min(100, Math.floor(blastForce * 28) + 30);
+    this.spawnFloatingDebris(impact, debrisAmount, blastForce, sampledColors);
 
     // Shockwave Ring FX
     this.shockwaveMesh.position.copy(impact);
@@ -373,16 +643,98 @@ export class VoxelEngine {
       this.sparkPositions[idx + 1] = impact.y;
       this.sparkPositions[idx + 2] = impact.z;
 
-      this.sparkVelocities[idx] = (Math.random() - 0.5) * 1.8;
-      this.sparkVelocities[idx + 1] = Math.random() * 1.8 + 0.5;
-      this.sparkVelocities[idx + 2] = (Math.random() - 0.5) * 1.8;
+      this.sparkVelocities[idx] = (Math.random() - 0.5) * (blastForce * 1.5);
+      this.sparkVelocities[idx + 1] = Math.random() * (blastForce * 1.5) + 0.5;
+      this.sparkVelocities[idx + 2] = (Math.random() - 0.5) * (blastForce * 1.5);
     }
     this.sparkGeom.attributes.position.needsUpdate = true;
     (this.sparkParticles.material as THREE.PointsMaterial).opacity = 1.0;
     this.sparkParticles.visible = true;
 
-    // Camera Shake Impact
-    this.cameraShakeIntensity = 1.2;
+    // Camera Shake
+    this.cameraShakeIntensity = Math.min(2.0, blastForce * 0.8);
+
+    this.emitStats();
+
+    // If all voxels are activated, update engine state to DISMANTLING
+    let allActive = true;
+    for (let i = 0; i < count; i++) {
+      if (!this.voxels[i].isPhysicsActive) {
+        allActive = false;
+        break;
+      }
+    }
+
+    if (allActive && this.state === AppState.STABLE) {
+      this.state = AppState.DISMANTLING;
+      this.onStateChange(this.state);
+    }
+  }
+
+  /**
+   * Dynamite Bomb Plant Routine
+   */
+  private plantDynamiteAt(point: THREE.Vector3) {
+    if (this.isDynamiteActive) return;
+
+    this.dynamiteTargetPoint.copy(point);
+    this.dynamiteGroup.position.copy(point);
+    this.dynamiteGroup.visible = true;
+    this.isDynamiteActive = true;
+    this.dynamiteStartTime = Date.now();
+  }
+
+  /**
+   * Paint Spray Routine
+   */
+  private paintAtPoint(point: THREE.Vector3) {
+    if (!this.instanceMesh) return;
+    const count = this.voxels.length;
+    const radius = 7.0;
+    const paintColorObj = new THREE.Color(this.paintColor);
+
+    let painted = false;
+    for (let i = 0; i < count; i++) {
+      const v = this.voxels[i];
+      const dx = v.x - point.x;
+      const dy = v.y - point.y;
+      const dz = v.z - point.z;
+      if (dx * dx + dy * dy + dz * dz <= radius * radius) {
+        v.color.copy(paintColorObj);
+        this.instanceMesh.setColorAt(i, v.color);
+        painted = true;
+      }
+    }
+
+    if (painted && this.instanceMesh.instanceColor) {
+      this.instanceMesh.instanceColor.needsUpdate = true;
+    }
+  }
+
+  /**
+   * Magnet / Anti-Gravity Impulse Routine
+   */
+  private applyMagnetAt(point: THREE.Vector3) {
+    const count = this.voxels.length;
+    const radius = 16.0;
+
+    for (let i = 0; i < count; i++) {
+      const v = this.voxels[i];
+      const dx = point.x - v.x;
+      const dy = point.y - v.y;
+      const dz = point.z - v.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+
+      if (distSq <= radius * radius) {
+        v.isPhysicsActive = true;
+        const dist = Math.sqrt(distSq) + 0.1;
+        // Pull voxels toward cursor with force
+        v.vx += (dx / dist) * 0.8;
+        v.vy += (dy / dist) * 0.8 + 0.5;
+        v.vz += (dz / dist) * 0.8;
+      }
+    }
+    this.emitStats();
   }
 
   public rebuild(targetModel: VoxelData[]) {
@@ -454,19 +806,33 @@ export class VoxelEngine {
       this.smashProgress += 0.08;
       
       if (this.smashProgress < 0.6) {
-        // Cocking back & accelerating down
         const t = this.smashProgress / 0.6;
-        const easeT = t * t * t; // Cubic acceleration
+        const easeT = t * t * t;
         this.hammerGroup.position.lerpVectors(this.smashStartPoint, this.smashTargetPoint, easeT);
         this.hammerGroup.rotation.x = -Math.PI / 4 + easeT * (Math.PI / 2);
-      } else if (this.smashProgress < 0.65 && this.state === AppState.STABLE) {
-        // IMPACT MOMENT!
+      } else if (this.smashProgress < 0.65) {
+        // IMPACT MOMENT
         this.hammerGroup.position.copy(this.smashTargetPoint);
-        this.triggerExplosionAt(this.smashTargetPoint);
+        this.triggerImpactAt(this.smashTargetPoint, this.currentHitRadius, this.currentBlastForce);
       } else if (this.smashProgress >= 1.0) {
-        // Recoil & fade out hammer
         this.isSmashing = false;
         this.hammerGroup.visible = false;
+      }
+    }
+
+    // --- Dynamite Fuse Loop ---
+    if (this.isDynamiteActive) {
+      const elapsed = Date.now() - this.dynamiteStartTime;
+      const spark = this.dynamiteGroup.getObjectByName("spark");
+      if (spark) {
+        spark.scale.setScalar(1 + Math.sin(elapsed * 0.03) * 0.4);
+      }
+
+      if (elapsed >= 1000) {
+        // BOOM!
+        this.isDynamiteActive = false;
+        this.dynamiteGroup.visible = false;
+        this.triggerImpactAt(this.dynamiteTargetPoint, 26.0, 3.8);
       }
     }
 
@@ -483,7 +849,7 @@ export class VoxelEngine {
     // --- Spark Particles ---
     if (this.sparkParticles.visible) {
       const mat = this.sparkParticles.material as THREE.PointsMaterial;
-      const pCount = 120;
+      const pCount = 150;
       for (let i = 0; i < pCount; i++) {
         const idx = i * 3;
         this.sparkPositions[idx] += this.sparkVelocities[idx];
@@ -498,6 +864,54 @@ export class VoxelEngine {
       }
     }
 
+    // --- Floating Debris Particle Loop ---
+    let hasDebris = false;
+    for (let i = 0; i < this.maxDebrisCount; i++) {
+      const p = this.debrisParticles[i];
+      if (!p.active) continue;
+
+      p.life -= 0.018;
+      if (p.life <= 0) {
+        p.active = false;
+        this.debrisDummy.position.set(0, -1000, 0);
+        this.debrisDummy.scale.set(0, 0, 0);
+        this.debrisDummy.updateMatrix();
+        this.debrisMesh.setMatrixAt(i, this.debrisDummy.matrix);
+        continue;
+      }
+
+      hasDebris = true;
+
+      // Position update with air drag & floating upward thermal draft
+      p.x += p.vx;
+      p.y += p.vy;
+      p.z += p.vz;
+
+      p.vy += 0.007; // Upward anti-gravity float
+      p.vx *= 0.95; // Air drag
+      p.vy *= 0.97;
+      p.vz *= 0.95;
+
+      // Rotation tumbling
+      p.rx += p.rvx;
+      p.ry += p.rvy;
+      p.rz += p.rvz;
+
+      // Scale fade
+      const lifeRatio = Math.max(0, p.life / p.maxLife);
+      const currentScale = p.initialScale * Math.sin(lifeRatio * Math.PI * 0.5);
+
+      this.debrisDummy.position.set(p.x, p.y, p.z);
+      this.debrisDummy.rotation.set(p.rx, p.ry, p.rz);
+      this.debrisDummy.scale.set(currentScale, currentScale, currentScale);
+      this.debrisDummy.updateMatrix();
+      this.debrisMesh.setMatrixAt(i, this.debrisDummy.matrix);
+    }
+
+    if (hasDebris) {
+      this.debrisMesh.instanceMatrix.needsUpdate = true;
+    }
+
     // --- Camera Shake ---
     if (this.cameraShakeIntensity > 0) {
       this.camera.position.x += (Math.random() - 0.5) * this.cameraShakeIntensity;
@@ -506,13 +920,15 @@ export class VoxelEngine {
       if (this.cameraShakeIntensity < 0.02) this.cameraShakeIntensity = 0;
     }
 
-    // --- Voxel Dismantling Physics ---
-    if (this.state === AppState.DISMANTLING) {
-        const count = this.voxels.length;
-        const floorY = CONFIG.FLOOR_Y + 0.5;
+    // --- Voxel Dismantling & Active Physics Physics ---
+    const count = this.voxels.length;
+    const floorY = CONFIG.FLOOR_Y + 0.5;
 
+    if (this.state === AppState.DISMANTLING || this.hasActivePhysics()) {
         for (let i = 0; i < count; i++) {
             const v = this.voxels[i];
+            if (!v.isPhysicsActive) continue;
+
             v.vy -= 0.025; // Gravity
             v.x += v.vx; v.y += v.vy; v.z += v.vz;
             v.rx += v.rvx; v.ry += v.rvy; v.rz += v.rvz;
@@ -528,7 +944,6 @@ export class VoxelEngine {
         const now = Date.now();
         const elapsed = now - this.rebuildStartTime;
         let allDone = true;
-        const count = this.voxels.length;
         const speed = 0.14;
 
         for (let i = 0; i < count; i++) {
@@ -556,14 +971,31 @@ export class VoxelEngine {
             } else {
                 v.x = t.x; v.y = t.y; v.z = t.z;
                 v.rx = 0; v.ry = 0; v.rz = 0;
+                v.isPhysicsActive = false;
             }
         }
 
         if (allDone) {
             this.state = AppState.STABLE;
+            this.hitsCount = 0;
+            this.emitStats();
             this.onStateChange(this.state);
         }
     }
+  }
+
+  private hasActivePhysics(): boolean {
+    for (let i = 0; i < this.voxels.length; i++) {
+      if (this.voxels[i].isPhysicsActive) return true;
+    }
+    return false;
+  }
+
+  private hasActiveDebris(): boolean {
+    for (let i = 0; i < this.maxDebrisCount; i++) {
+      if (this.debrisParticles[i].active) return true;
+    }
+    return false;
   }
 
   private animate() {
@@ -571,7 +1003,7 @@ export class VoxelEngine {
     this.controls.update();
     this.updatePhysics();
     
-    if (this.state !== AppState.STABLE || this.isSmashing || this.shockwaveMesh.visible) {
+    if (this.state !== AppState.STABLE || this.isSmashing || this.isDynamiteActive || this.shockwaveMesh.visible || this.hasActivePhysics() || this.hasActiveDebris()) {
         this.draw();
     }
     

@@ -9,7 +9,7 @@ import { UIOverlay } from './components/UIOverlay';
 import { JsonModal } from './components/JsonModal';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { Generators, PresetType, upscaleVoxelData } from './utils/voxelGenerators';
-import { AppState, VoxelData, SavedModel } from './types';
+import { AppState, VoxelData, SavedModel, ToolType, VoxelEngineStats } from './types';
 
 const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -17,7 +17,16 @@ const App: React.FC = () => {
   
   const [appState, setAppState] = useState<AppState>(AppState.STABLE);
   const [voxelCount, setVoxelCount] = useState<number>(0);
-  
+  const [stats, setStats] = useState<VoxelEngineStats>({
+    intactCount: 0,
+    totalCount: 0,
+    hitsCount: 0,
+    integrityPercent: 100
+  });
+
+  const [activeTool, setActiveTool] = useState<ToolType>('miniHammer');
+  const [paintColor, setPaintColor] = useState<number>(0xec4899);
+
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [jsonModalMode, setJsonModalMode] = useState<'view' | 'import'>('view');
   
@@ -38,7 +47,8 @@ const App: React.FC = () => {
     const engine = new VoxelEngine(
       containerRef.current,
       (newState) => setAppState(newState),
-      (count) => setVoxelCount(count)
+      (count) => setVoxelCount(count),
+      (newStats) => setStats(newStats)
     );
 
     engineRef.current = engine;
@@ -66,6 +76,16 @@ const App: React.FC = () => {
     if (!generator) return [];
     const baseData = generator();
     return scale > 1 ? upscaleVoxelData(baseData, scale) : baseData;
+  };
+
+  const handleSelectTool = (tool: ToolType) => {
+    setActiveTool(tool);
+    engineRef.current?.setTool(tool);
+  };
+
+  const handleSelectPaintColor = (colorHex: number) => {
+    setPaintColor(colorHex);
+    engineRef.current?.setPaintColor(colorHex);
   };
 
   const handleDismantle = () => {
@@ -166,7 +186,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Filter rebuilds to only show those relevant to the current base model
   const relevantRebuilds = customRebuilds.filter(
       r => r.baseModel === currentBaseModel
   );
@@ -179,13 +198,18 @@ const App: React.FC = () => {
       {/* UI Overlay */}
       <UIOverlay 
         voxelCount={voxelCount}
+        stats={stats}
         appState={appState}
+        activeTool={activeTool}
+        paintColor={paintColor}
         currentBaseModel={currentBaseModel}
         customBuilds={customBuilds}
         customRebuilds={relevantRebuilds} 
         isAutoRotate={isAutoRotate}
         isInfoVisible={showWelcome}
         densityScale={densityScale}
+        onSelectTool={handleSelectTool}
+        onSelectPaintColor={handleSelectPaintColor}
         onDensityChange={handleDensityChange}
         onDismantle={handleDismantle}
         onRebuild={handleRebuild}

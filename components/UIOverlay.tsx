@@ -4,7 +4,7 @@
 */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, SavedModel } from '../types';
+import { AppState, SavedModel, ToolType, VoxelEngineStats } from '../types';
 import { PresetType } from '../utils/voxelGenerators';
 import { 
   Box, 
@@ -35,18 +35,29 @@ import {
   Mountain,
   Globe,
   Layers,
-  Grid
+  Grid,
+  Paintbrush,
+  Magnet,
+  Zap,
+  Bomb,
+  ShieldAlert,
+  Activity
 } from 'lucide-react';
 
 interface UIOverlayProps {
   voxelCount: number;
+  stats: VoxelEngineStats;
   appState: AppState;
+  activeTool: ToolType;
+  paintColor: number;
   currentBaseModel: string;
   customBuilds: SavedModel[];
   customRebuilds: SavedModel[];
   isAutoRotate: boolean;
   isInfoVisible: boolean;
   densityScale: number;
+  onSelectTool: (tool: ToolType) => void;
+  onSelectPaintColor: (colorHex: number) => void;
   onDensityChange: (scale: number) => void;
   onDismantle: () => void;
   onRebuild: (type: PresetType) => void;
@@ -85,15 +96,30 @@ export const PRESET_MODELS: { id: PresetType; label: string; icon: React.ReactNo
   { id: 'House', label: 'Cottage House', icon: <Home size={18} /> },
 ];
 
+export const PAINT_COLORS = [
+  { name: 'Neon Pink', hex: 0xec4899, bg: 'bg-pink-500' },
+  { name: 'Cyber Cyan', hex: 0x06b6d4, bg: 'bg-cyan-500' },
+  { name: 'Gold', hex: 0xeab308, bg: 'bg-yellow-500' },
+  { name: 'Emerald', hex: 0x10b981, bg: 'bg-emerald-500' },
+  { name: 'Violet', hex: 0xa855f7, bg: 'bg-purple-500' },
+  { name: 'Lava Orange', hex: 0xf97316, bg: 'bg-orange-500' },
+  { name: 'Ice White', hex: 0xf8fafc, bg: 'bg-slate-100' }
+];
+
 export const UIOverlay: React.FC<UIOverlayProps> = ({
   voxelCount,
+  stats,
   appState,
+  activeTool,
+  paintColor,
   currentBaseModel,
   customBuilds,
   customRebuilds,
   isAutoRotate,
   isInfoVisible,
   densityScale,
+  onSelectTool,
+  onSelectPaintColor,
   onDensityChange,
   onDismantle,
   onRebuild,
@@ -111,13 +137,32 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   const megaModels = PRESET_MODELS.filter(m => m.isMega);
   const standardModels = PRESET_MODELS.filter(m => !m.isMega);
 
+  const getToolInstruction = () => {
+    switch(activeTool) {
+      case 'miniHammer':
+        return 'Tap or click model to chisel with Mini Hammer! Takes 10-20 hits to fully dismantle.';
+      case 'sledgeHammer':
+        return 'Medium War Hammer! Deals heavier localized impacts in 3-5 strikes.';
+      case 'megaHammer':
+        return 'Heavy War Hammer! Shatters the entire sculpture in 1 mighty smash!';
+      case 'dynamite':
+        return 'Click anywhere to plant TNT Dynamite with a 1-second ticking fuse!';
+      case 'paintbrush':
+        return 'Click and spray paint color directly onto voxels in real-time!';
+      case 'magnet':
+        return 'Click and drag on voxels to pull and launch them with gravity magnetic pulse!';
+      default:
+        return 'Select a tool to interact with the model!';
+    }
+  };
+
   return (
     <div className="absolute top-0 left-0 w-full h-full pointer-events-none select-none">
       
-      {/* --- Top Bar (Stats & Tools) --- */}
+      {/* --- Top Bar (Stats & Builds Dropdown) --- */}
       <div className="absolute top-4 left-4 right-4 flex justify-between items-start">
         
-        {/* Global Scene Controls */}
+        {/* Global Scene Controls & Integrity Bar */}
         <div className="pointer-events-auto flex flex-col gap-2">
             <DropdownMenu 
                 icon={<FolderOpen size={20} />}
@@ -173,9 +218,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 <DropdownItem onClick={onImportJson} icon={<FileJson size={16}/>} label="Import JSON" />
             </DropdownMenu>
 
-            {/* Block Counter & Density Scale Selector */}
+            {/* Block Counter & Model Health/Integrity Bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mt-1">
-                <div className="flex items-center gap-3 px-4 py-2 bg-white/90 backdrop-blur-sm shadow-md rounded-2xl border border-slate-200/80 text-slate-500 font-bold w-fit">
+                {/* Block Counter */}
+                <div className="flex items-center gap-3 px-4 py-2 bg-white/95 backdrop-blur-md shadow-md rounded-2xl border border-slate-200/80 text-slate-500 font-bold w-fit">
                     <div className="bg-blue-100 p-1.5 rounded-lg text-blue-600">
                         <Box size={18} strokeWidth={3} />
                     </div>
@@ -187,14 +233,40 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                     </div>
                 </div>
 
+                {/* Integrity Progress Gauge */}
+                <div className="flex items-center gap-3 px-4 py-2 bg-white/95 backdrop-blur-md shadow-md rounded-2xl border border-slate-200/80 w-fit">
+                    <div className={`p-1.5 rounded-lg ${stats.integrityPercent > 60 ? 'bg-emerald-100 text-emerald-600' : stats.integrityPercent > 25 ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
+                        <Activity size={18} strokeWidth={2.5} />
+                    </div>
+                    <div className="flex flex-col leading-tight min-w-[120px]">
+                        <div className="flex justify-between items-center text-[10px] uppercase font-black text-slate-500 tracking-wider">
+                            <span>Integrity</span>
+                            <span className="font-mono text-slate-900 font-bold">{stats.integrityPercent}%</span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1 border border-slate-200">
+                            <div 
+                              className={`h-full transition-all duration-300 ${stats.integrityPercent > 60 ? 'bg-emerald-500' : stats.integrityPercent > 25 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                              style={{ width: `${stats.integrityPercent}%` }}
+                            />
+                        </div>
+                    </div>
+                    
+                    {stats.hitsCount > 0 && (
+                      <div className="ml-1 bg-amber-100 text-amber-800 text-xs font-black px-2 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1">
+                        <Zap size={12} className="fill-amber-500 text-amber-500" />
+                        <span>{stats.hitsCount} {stats.hitsCount === 1 ? 'Hit' : 'Hits'}</span>
+                      </div>
+                    )}
+                </div>
+
                 {/* Sub-division Density Control */}
-                <div className="flex items-center gap-1 bg-white/90 backdrop-blur-sm shadow-md rounded-2xl border border-slate-200/80 p-1">
+                <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md shadow-md rounded-2xl border border-slate-200/80 p-1">
                     <span className="text-[10px] font-black text-slate-400 uppercase px-2">Density:</span>
                     {([
                         { scale: 1, label: '1x' },
-                        { scale: 2, label: '8x (~25k)' },
-                        { scale: 3, label: '27x (~100k)' },
-                        { scale: 4, label: '64x (150k+)' }
+                        { scale: 2, label: '8x' },
+                        { scale: 3, label: '27x' },
+                        { scale: 4, label: '64x' }
                     ]).map((opt) => (
                         <button
                             key={`density-${opt.scale}`}
@@ -237,86 +309,169 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
         </div>
       </div>
 
-      {/* --- Bottom Control Center --- */}
-      <div className="absolute bottom-8 left-0 w-full flex justify-center items-end pointer-events-none">
+      {/* --- Bottom Control Center & Tool Palette --- */}
+      <div className="absolute bottom-6 left-0 w-full flex flex-col items-center justify-end pointer-events-none gap-3">
         
-        <div className="pointer-events-auto transition-all duration-500 ease-in-out transform">
-            
-            {/* STATE 1: STABLE -> DISMANTLE */}
-            {isStable && (
-                 <div className="flex flex-col items-center gap-2 animate-in slide-in-from-bottom-10 fade-in duration-300">
-                     <div className="bg-slate-900/90 text-amber-300 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-amber-500/30 flex items-center gap-1.5 backdrop-blur-md">
-                        <Hammer size={14} className="text-amber-400 animate-bounce" />
-                        <span>Click BREAK or tap model to strike with 3D Hammer!</span>
-                     </div>
-                     <BigActionButton 
-                        onClick={onDismantle} 
-                        icon={<Hammer size={32} strokeWidth={2.5} />} 
-                        label="HAMMER SMASH" 
-                     />
-                 </div>
-            )}
-
-            {/* STATE 2: DISMANTLED -> REBUILD */}
-            {isDismantling && (
-                <div className="flex items-end gap-4 animate-in slide-in-from-bottom-10 fade-in duration-300">
-                     <DropdownMenu 
-                        icon={<Wrench size={24} />}
-                        label="Rebuild Into..."
-                        color="emerald"
-                        direction="up"
-                        big
-                     >
-                        <div className="px-2 py-1 text-xs font-black text-emerald-600 uppercase tracking-wider">MEGA 100k+ REBUILDS</div>
-                        {megaModels.map((item) => (
-                            <DropdownItem 
-                                key={`rebuild-mega-${item.id}`} 
-                                onClick={() => onRebuild(item.id)} 
-                                icon={item.icon} 
-                                label={item.label} 
-                                badge={item.approxCount}
-                            />
-                        ))}
-
-                        <div className="h-px bg-slate-100 my-1" />
-
-                        <div className="px-2 py-1 text-xs font-bold text-slate-400 uppercase tracking-wider">STANDARD REBUILDS</div>
-                        {standardModels.map((item) => (
-                            <DropdownItem 
-                                key={`rebuild-preset-${item.id}`} 
-                                onClick={() => onRebuild(item.id)} 
-                                icon={item.icon} 
-                                label={item.label} 
-                            />
-                        ))}
-
-                        {/* Custom Rebuilds */}
-                        {customRebuilds.length > 0 && (
-                            <>
-                                <div className="h-px bg-slate-100 my-1" />
-                                <div className="px-2 py-1 text-xs font-bold text-slate-400 uppercase tracking-wider">CUSTOM REBUILDS</div>
-                                {customRebuilds.map((model, idx) => (
-                                    <DropdownItem 
-                                        key={`rebuild-custom-${idx}`} 
-                                        onClick={() => onSelectCustomRebuild(model)} 
-                                        icon={<History size={18}/>} 
-                                        label={model.name}
-                                        truncate 
-                                    />
-                                ))}
-                            </>
-                        )}
-                     </DropdownMenu>
-                </div>
-            )}
+        {/* Tool Helper Instruction Banner */}
+        <div className="pointer-events-auto bg-slate-900/90 text-amber-300 text-xs font-bold px-4 py-2 rounded-full shadow-xl border border-amber-500/30 flex items-center gap-2 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2">
+           <Zap size={15} className="text-amber-400 animate-pulse" />
+           <span>{getToolInstruction()}</span>
         </div>
+
+        {/* Tool Dock Selector */}
+        <div className="pointer-events-auto bg-white/95 backdrop-blur-md p-2 rounded-3xl shadow-2xl border-2 border-slate-200/80 flex items-center gap-1.5">
+          <ToolButton 
+            active={activeTool === 'miniHammer'} 
+            onClick={() => onSelectTool('miniHammer')}
+            icon={<Hammer size={20} className="text-amber-600" />}
+            label="Mini Chisel"
+            badge="Multi-Hit"
+          />
+          <ToolButton 
+            active={activeTool === 'sledgeHammer'} 
+            onClick={() => onSelectTool('sledgeHammer')}
+            icon={<Hammer size={24} className="text-rose-600" />}
+            label="Sledge Hammer"
+            badge="Medium"
+          />
+          <ToolButton 
+            active={activeTool === 'megaHammer'} 
+            onClick={() => onSelectTool('megaHammer')}
+            icon={<ShieldAlert size={22} className="text-indigo-600" />}
+            label="Mega War Hammer"
+            badge="1-Hit Shatter"
+          />
+          <ToolButton 
+            active={activeTool === 'dynamite'} 
+            onClick={() => onSelectTool('dynamite')}
+            icon={<Bomb size={22} className="text-red-500" />}
+            label="TNT Dynamite"
+            badge="1s Fuse"
+          />
+          <ToolButton 
+            active={activeTool === 'paintbrush'} 
+            onClick={() => onSelectTool('paintbrush')}
+            icon={<Paintbrush size={22} className="text-pink-500" />}
+            label="Paint Spray"
+          />
+          <ToolButton 
+            active={activeTool === 'magnet'} 
+            onClick={() => onSelectTool('magnet')}
+            icon={<Magnet size={22} className="text-cyan-500" />}
+            label="Voxel Magnet"
+          />
+        </div>
+
+        {/* Color Palette (When Paintbrush is Active) */}
+        {activeTool === 'paintbrush' && (
+          <div className="pointer-events-auto bg-white/95 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl border border-slate-200 flex items-center gap-2 animate-in fade-in zoom-in-95">
+            <span className="text-xs font-black text-slate-400 uppercase mr-1">Paint Color:</span>
+            {PAINT_COLORS.map(c => (
+              <button
+                key={`color-${c.hex}`}
+                onClick={() => onSelectPaintColor(c.hex)}
+                className={`w-7 h-7 rounded-full transition-all border-2 ${c.bg} ${paintColor === c.hex ? 'ring-4 ring-indigo-500 ring-offset-2 scale-110 border-white' : 'border-black/10 hover:scale-105'}`}
+                title={c.name}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Quick Action: Rebuild Dropdown or Heavy Shatter */}
+        <div className="pointer-events-auto flex items-center gap-2 mt-1">
+          {stats.integrityPercent < 100 && (
+            <DropdownMenu 
+               icon={<Wrench size={20} />}
+               label="Rebuild Into..."
+               color="emerald"
+               direction="up"
+            >
+               <div className="px-2 py-1 text-xs font-black text-emerald-600 uppercase tracking-wider">MEGA REBUILDS</div>
+               {megaModels.map((item) => (
+                   <DropdownItem 
+                       key={`rebuild-mega-${item.id}`} 
+                       onClick={() => onRebuild(item.id)} 
+                       icon={item.icon} 
+                       label={item.label} 
+                       badge={item.approxCount}
+                   />
+               ))}
+
+               <div className="h-px bg-slate-100 my-1" />
+
+               <div className="px-2 py-1 text-xs font-bold text-slate-400 uppercase tracking-wider">STANDARD REBUILDS</div>
+               {standardModels.map((item) => (
+                   <DropdownItem 
+                       key={`rebuild-preset-${item.id}`} 
+                       onClick={() => onRebuild(item.id)} 
+                       icon={item.icon} 
+                       label={item.label} 
+                   />
+               ))}
+
+               {customRebuilds.length > 0 && (
+                   <>
+                       <div className="h-px bg-slate-100 my-1" />
+                       <div className="px-2 py-1 text-xs font-bold text-slate-400 uppercase tracking-wider">CUSTOM REBUILDS</div>
+                       {customRebuilds.map((model, idx) => (
+                           <DropdownItem 
+                               key={`rebuild-custom-${idx}`} 
+                               onClick={() => onSelectCustomRebuild(model)} 
+                               icon={<History size={18}/>} 
+                               label={model.name}
+                               truncate 
+                           />
+                       ))}
+                   </>
+               )}
+            </DropdownMenu>
+          )}
+
+          <TactileButton 
+            onClick={onDismantle} 
+            color="rose" 
+            icon={<Hammer size={18} strokeWidth={2.5} />} 
+            label="Strike Active Tool"
+          />
+        </div>
+
       </div>
 
     </div>
   );
 };
 
-// --- Components ---
+// --- Sub Components ---
+
+interface ToolButtonProps {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  badge?: string;
+}
+
+const ToolButton: React.FC<ToolButtonProps> = ({ active, onClick, icon, label, badge }) => {
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        relative flex flex-col items-center justify-center px-3.5 py-2.5 rounded-2xl font-black text-xs transition-all duration-150
+        ${active 
+          ? 'bg-slate-900 text-white shadow-lg scale-105 ring-2 ring-indigo-500' 
+          : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200 hover:text-slate-900'}
+      `}
+    >
+      <div className="mb-1">{icon}</div>
+      <span className="whitespace-nowrap">{label}</span>
+      {badge && (
+        <span className={`text-[9px] px-1.5 py-0.2 rounded mt-0.5 font-bold ${active ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+};
 
 interface TactileButtonProps {
   onClick: () => void;
@@ -355,20 +510,6 @@ const TactileButton: React.FC<TactileButtonProps> = ({ onClick, disabled, icon, 
     </button>
   );
 };
-
-const BigActionButton: React.FC<{onClick: () => void, icon: React.ReactNode, label: string}> = ({ onClick, icon, label }) => {
-    return (
-        <button 
-            onClick={onClick}
-            className="group relative flex flex-col items-center justify-center w-32 h-32 rounded-3xl bg-rose-500 hover:bg-rose-600 text-white shadow-xl shadow-rose-900/30 border-b-[8px] border-rose-800 active:border-b-0 active:translate-y-[8px] transition-all duration-150"
-        >
-            <div className="mb-2">{icon}</div>
-            <div className="text-sm font-black tracking-wider">{label}</div>
-        </button>
-    )
-}
-
-// --- Dropdown Components ---
 
 interface DropdownProps {
     icon: React.ReactNode;

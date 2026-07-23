@@ -19,6 +19,15 @@ export interface VoxelData {
   color: number;
 }
 
+export type ToolType = 'miniHammer' | 'sledgeHammer' | 'megaHammer' | 'dynamite' | 'paintbrush' | 'magnet';
+
+export interface VoxelEngineStats {
+  intactCount: number;
+  totalCount: number;
+  hitsCount: number;
+  integrityPercent: number;
+}
+
 export interface SimulationVoxel {
   id: number;
   x: number;
@@ -35,6 +44,7 @@ export interface SimulationVoxel {
   rvx: number;
   rvy: number;
   rvz: number;
+  isPhysicsActive?: boolean;
 }
 
 export interface RebuildTarget {
